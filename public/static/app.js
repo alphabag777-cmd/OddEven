@@ -746,6 +746,10 @@ async function loadMypage() {
 // ═══════════════════════════════════════════════
 // 지갑
 // ═══════════════════════════════════════════════
+// 현재 선택된 네트워크
+let currentDepositNetwork = null
+let depositNetworks = []
+
 async function loadWallet() {
   if (!me) {
     $('walletNeedLogin').classList.remove('hidden')
@@ -764,7 +768,6 @@ async function loadWallet() {
   if ($('wTotalDep')) $('wTotalDep').textContent = fmtU(data.totalDeposit) + ' USDT'
   if ($('wTotalWd'))  $('wTotalWd').textContent  = fmtU(data.totalWithdraw) + ' USDT'
   if ($('wTotalBet')) $('wTotalBet').textContent = fmtU(data.totalBetAmount) + ' USDT'
-  if ($('wDepAddr'))  $('wDepAddr').textContent  = data.depositAddress
 
   // 베팅 달성 현황
   const required = data.totalDeposit * 0.5
@@ -772,11 +775,106 @@ async function loadWallet() {
   if ($('wBetProgress')) $('wBetProgress').textContent = fmtU(data.totalBetAmount) + ' / ' + fmtU(required) + ' USDT'
   if ($('wBetBar'))      $('wBetBar').style.width      = progress + '%'
   if ($('wBetBar'))      $('wBetBar').className = 'h-2 rounded-full transition-all ' + (progress >= 100 ? 'bg-green-500' : 'bg-blue-500')
+
+  // 입금 네트워크 정보 로드
+  await loadDepositNetworks()
+}
+
+async function loadDepositNetworks() {
+  const lang = localStorage.getItem('lang') || 'ko'
+  const data = await api('/api/deposit-info?lang=' + lang)
+  const tabsEl = $('depositNetworkTabs')
+  const infoEl = $('depositNetworkInfo')
+  if (!tabsEl || !infoEl) return
+
+  depositNetworks = data.networks || []
+
+  if (depositNetworks.length === 0) {
+    // 설정된 입금 주소 없음 - 관리자에게 문의 안내
+    infoEl.innerHTML = `
+      <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 text-center text-sm text-yellow-400">
+        <i class="fas fa-exclamation-triangle mb-2 text-lg block"></i>
+        입금 주소가 아직 설정되지 않았습니다.<br>
+        <span class="text-xs text-gray-400 mt-1 block">관리자에게 문의하거나 잠시 후 다시 시도하세요.</span>
+      </div>`
+    tabsEl.innerHTML = ''
+    return
+  }
+
+  // 네트워크 탭 생성
+  const netColors = { trc20:'green', erc20:'blue', bep20:'yellow' }
+  tabsEl.innerHTML = depositNetworks.map((net, i) => `
+    <button onclick="selectDepositNetwork('${net.id}')" id="depTab_${net.id}"
+      class="px-3 py-1.5 rounded-full text-xs font-bold transition border ${i === 0
+        ? `bg-${netColors[net.id] || 'green'}-500/30 text-${netColors[net.id] || 'green'}-300 border-${netColors[net.id] || 'green'}-500/40`
+        : 'bg-white/10 text-gray-400 border-white/20 hover:bg-white/20'}">
+      ${net.label}
+    </button>`).join('')
+
+  // 첫 번째 네트워크 선택
+  if (depositNetworks.length > 0) selectDepositNetwork(depositNetworks[0].id)
+}
+
+function selectDepositNetwork(netId) {
+  currentDepositNetwork = netId
+  const net = depositNetworks.find(n => n.id === netId)
+  if (!net) return
+
+  // 탭 스타일 업데이트
+  const colors = { trc20:'green', erc20:'blue', bep20:'yellow' }
+  depositNetworks.forEach(n => {
+    const tab = $('depTab_' + n.id)
+    if (!tab) return
+    const c = colors[n.id] || 'green'
+    if (n.id === netId) {
+      tab.className = `px-3 py-1.5 rounded-full text-xs font-bold transition border bg-${c}-500/30 text-${c}-300 border-${c}-500/40`
+    } else {
+      tab.className = 'px-3 py-1.5 rounded-full text-xs font-bold transition border bg-white/10 text-gray-400 border-white/20 hover:bg-white/20'
+    }
+  })
+
+  const infoEl = $('depositNetworkInfo')
+  if (!infoEl) return
+  const c = colors[netId] || 'green'
+  const networkName = net.label
+  const qrNote = netId === 'trc20' ? '주소는 T로 시작합니다' : '주소는 0x로 시작합니다'
+
+  infoEl.innerHTML = `
+    <div class="bg-black/30 border border-${c}-500/30 rounded-xl p-4 mb-3">
+      <div class="text-xs text-gray-400 mb-2">💳 ${networkName} 입금 주소</div>
+      <div class="mono text-xs text-${c}-400 break-all font-bold leading-relaxed" id="wDepAddr">${net.address}</div>
+      <div class="flex gap-2 mt-3">
+        <button onclick="copyNetworkAddr('${net.address}')" 
+          class="flex-1 py-2 bg-${c}-600/20 border border-${c}-600/30 rounded-lg text-xs text-${c}-400 hover:bg-${c}-600/30 transition font-bold">
+          📋 주소 복사
+        </button>
+      </div>
+      <div class="text-xs text-gray-500 mt-2">💡 ${qrNote}</div>
+    </div>
+    <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-xs text-yellow-300 mb-2">
+      <i class="fas fa-exclamation-triangle mr-1"></i>
+      <strong>${networkName} 전용 주소</strong>입니다. 다른 네트워크로 전송 시 자산 손실이 발생합니다.
+    </div>
+    ${net.memo ? `<div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300">
+      <i class="fas fa-info-circle mr-1"></i>${net.memo}
+    </div>` : ''}
+    <div class="text-xs text-gray-500 mt-2 text-center">최소 입금액: <strong class="text-white">${net.minAmount} USDT</strong></div>`
+}
+
+function copyNetworkAddr(addr) {
+  navigator.clipboard.writeText(addr).then(() => toast('📋 ' + t('copied'), 'text-blue-400'))
+    .catch(() => {
+      // 구형 브라우저 fallback
+      const el = document.createElement('textarea')
+      el.value = addr; document.body.appendChild(el); el.select()
+      document.execCommand('copy'); document.body.removeChild(el)
+      toast('📋 ' + t('copied'), 'text-blue-400')
+    })
 }
 
 function copyAddr() {
-  const addr = $('wDepAddr').textContent
-  navigator.clipboard.writeText(addr).then(() => toast('📋 ' + t('copied'), 'text-blue-400'))
+  const addr = $('wDepAddr')?.textContent
+  if (addr && addr !== '-') copyNetworkAddr(addr)
 }
 
 function setMaxWd() {
@@ -1047,6 +1145,7 @@ async function loadAdmin() {
   loadAdminPartners()
   loadAdminInquiries('')
   loadAdminFAQs()
+  loadDepositSettings()  // 입금 설정 로드
 
   // 공지사항 Quill 에디터 초기화
   setTimeout(() => {
@@ -1269,6 +1368,65 @@ async function adminResetPw() {
 
 // ═══════════════════════════════════════════════
 // 파트너 관리
+// ═══════════════════════════════════════════════
+// 입금 설정 (관리자)
+// ═══════════════════════════════════════════════
+async function loadDepositSettings() {
+  const data = await api('/api/admin/settings')
+  if (data.error) return
+  const s = data.settings || {}
+
+  const set = (id, val) => { const el = $(id); if (el) { if (el.type === 'checkbox') el.checked = val === '1'; else el.value = val || '' } }
+
+  set('set_trc20_enabled', s['deposit_trc20_enabled'] || '1')
+  set('set_trc20_address', s['deposit_trc20_address'] || '')
+  set('set_trc20_memo',    s['deposit_trc20_memo']    || '')
+
+  set('set_erc20_enabled', s['deposit_erc20_enabled'] || '0')
+  set('set_erc20_address', s['deposit_erc20_address'] || '')
+  set('set_erc20_memo',    s['deposit_erc20_memo']    || '')
+
+  set('set_bep20_enabled', s['deposit_bep20_enabled'] || '0')
+  set('set_bep20_address', s['deposit_bep20_address'] || '')
+  set('set_bep20_memo',    s['deposit_bep20_memo']    || '')
+
+  set('set_min_amount',    s['deposit_min_amount']    || '1')
+}
+
+async function saveDepositSettings() {
+  const get  = id => { const el = $(id); if (!el) return ''; return el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value.trim() }
+
+  const settings = {
+    deposit_trc20_enabled: get('set_trc20_enabled'),
+    deposit_trc20_address: get('set_trc20_address'),
+    deposit_trc20_memo:    get('set_trc20_memo'),
+
+    deposit_erc20_enabled: get('set_erc20_enabled'),
+    deposit_erc20_address: get('set_erc20_address'),
+    deposit_erc20_memo:    get('set_erc20_memo'),
+
+    deposit_bep20_enabled: get('set_bep20_enabled'),
+    deposit_bep20_address: get('set_bep20_address'),
+    deposit_bep20_memo:    get('set_bep20_memo'),
+
+    deposit_min_amount: get('set_min_amount') || '1'
+  }
+
+  // 활성화된 네트워크에 주소가 있는지 검증
+  for (const net of ['trc20','erc20','bep20']) {
+    if (settings[`deposit_${net}_enabled`] === '1' && !settings[`deposit_${net}_address`]) {
+      toast(`❌ ${net.toUpperCase()} 활성화 시 주소를 입력해야 합니다`, 'text-red-400'); return
+    }
+  }
+
+  const data = await api('/api/admin/settings', { method:'POST', body: JSON.stringify({ settings }) })
+  if (data.success) {
+    toast('✅ 입금 설정이 저장되었습니다', 'text-green-400')
+  } else {
+    toast('❌ 저장 실패: ' + (data.error || '오류'), 'text-red-400')
+  }
+}
+
 // ═══════════════════════════════════════════════
 async function loadAdminPartners() {
   const data = await api('/api/admin/partners')

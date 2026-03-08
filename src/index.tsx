@@ -1115,6 +1115,66 @@ app.get('/api/admin/deposits', async (c) => {
 })
 
 // ─────────────────────────────────────────────
+// 사이트 설정 API
+// ─────────────────────────────────────────────
+
+// 입금 정보 조회 (공개 - 지갑 탭용)
+app.get('/api/deposit-info', async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT key, value FROM site_settings WHERE key LIKE 'deposit_%'"
+  ).all<any>()
+  const s: Record<string, string> = {}
+  for (const r of (rows.results || [])) s[r.key] = r.value
+
+  const networks = []
+  for (const net of ['trc20','erc20','bep20']) {
+    if (s[`deposit_${net}_enabled`] === '1' && s[`deposit_${net}_address`]) {
+      const lang = c.req.query('lang') || 'ko'
+      const memo = (lang !== 'ko' && s[`deposit_${net}_memo_en`]) 
+        ? s[`deposit_${net}_memo_en`] 
+        : s[`deposit_${net}_memo`]
+      networks.push({
+        id:      net,
+        label:   net === 'trc20' ? 'TRC20 (TRON)' : net === 'erc20' ? 'ERC20 (Ethereum)' : 'BEP20 (BSC)',
+        address: s[`deposit_${net}_address`],
+        memo:    memo || '',
+        minAmount: parseFloat(s['deposit_min_amount'] || '1')
+      })
+    }
+  }
+  return c.json({ networks, minAmount: parseFloat(s['deposit_min_amount'] || '1') })
+})
+
+// 관리자: 설정 전체 조회
+app.get('/api/admin/settings', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const rows = await c.env.DB.prepare('SELECT key, value FROM site_settings').all<any>()
+  const settings: Record<string, string> = {}
+  for (const r of (rows.results || [])) settings[r.key] = r.value
+  return c.json({ settings })
+})
+
+// 관리자: 설정 저장 (여러 키 한번에)
+app.post('/api/admin/settings', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { settings } = await c.req.json() as { settings: Record<string, string> }
+  if (!settings || typeof settings !== 'object') return c.json({ error:'INVALID' }, 400)
+
+  const now = Date.now()
+  const stmts = []
+  for (const [key, value] of Object.entries(settings)) {
+    // 허용된 키만 저장
+    if (!key.startsWith('deposit_') && !key.startsWith('site_')) continue
+    stmts.push(
+      c.env.DB.prepare('INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES (?,?,?)')
+        .bind(key, String(value), now)
+    )
+  }
+  if (stmts.length > 0) await c.env.DB.batch(stmts)
+  return c.json({ success: true, saved: stmts.length })
+})
+
+// ─────────────────────────────────────────────
 // 정적/기본 라우트
 // ─────────────────────────────────────────────
 app.get('*', (c) => c.html(HTML))
@@ -1444,16 +1504,14 @@ select option{background:#1a1a2e;color:#fff}
     </div>
     <div class="glass rounded-2xl p-5">
       <div class="font-bold mb-3 text-green-400" data-i18n="deposit_title">📥 USDT 입금</div>
-      <div class="bg-black/30 border border-green-500/30 rounded-xl p-4 mb-3">
-        <div class="text-xs text-gray-400 mb-1" data-i18n="deposit_addr">입금 주소 (TRC20)</div>
-        <div class="mono text-xs text-green-400 break-all font-bold" id="wDepAddr">-</div>
-        <button onclick="copyAddr()" class="mt-2 px-3 py-1.5 bg-green-600/20 border border-green-600/30 rounded-lg text-xs text-green-400 hover:bg-green-600/30 transition" data-i18n="copy_addr">📋 주소 복사</button>
+      <!-- 네트워크 탭 (동적 생성) -->
+      <div id="depositNetworkTabs" class="flex gap-2 mb-3 flex-wrap"></div>
+      <!-- 네트워크별 입금 정보 (동적 생성) -->
+      <div id="depositNetworkInfo">
+        <div class="text-xs text-gray-500 text-center py-6">⏳ 입금 정보 로딩 중...</div>
       </div>
-      <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-xs text-yellow-400 mb-3">
-        <i class="fas fa-exclamation-triangle mr-1"></i>
-        <span data-i18n="deposit_warning">반드시 TRC20(TRON) 네트워크로 입금하세요.</span>
-      </div>
-      <div class="border-t border-white/10 pt-3">
+      <!-- 데모 입금 -->
+      <div class="border-t border-white/10 pt-3 mt-3">
         <div class="text-xs text-gray-400 mb-2" data-i18n="demo_deposit">🧪 데모 입금 (테스트용)</div>
         <div class="flex gap-2">
           <input type="number" id="demoDepAmt" placeholder="10" min="1" step="1" class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-400">
@@ -1785,6 +1843,77 @@ select option{background:#1a1a2e;color:#fff}
         <button onclick="adminResetPw()" class="flex-1 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-xs font-bold transition">🔑 비번초기화</button>
         <button onclick="document.getElementById('adBalModal').classList.add('hidden')" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition">취소</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ══ 입금 설정 (본사 주소 / 네트워크 관리) ══ -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm text-yellow-400">💳 입금 설정 (본사 주소 · 네트워크)</div>
+      <button onclick="loadDepositSettings()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄</button>
+    </div>
+    <div class="text-xs text-gray-400 mb-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2">
+      ⚠️ 여기서 입력한 주소가 <strong>모든 사용자의 입금 주소</strong>로 표시됩니다. 각 네트워크 활성화 여부도 설정 가능합니다.
+    </div>
+    <div class="space-y-4" id="depositSettingsForm">
+      <!-- TRC20 (TRON) -->
+      <div class="bg-green-500/10 border border-green-500/20 rounded-xl p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="font-bold text-sm text-green-400">🟢 TRC20 (TRON) USDT</div>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <span class="text-xs text-gray-400">활성화</span>
+            <input type="checkbox" id="set_trc20_enabled" class="w-4 h-4 accent-green-500">
+          </label>
+        </div>
+        <div class="space-y-1.5">
+          <input type="text" id="set_trc20_address" placeholder="T... (TRC20 USDT 입금 주소)" 
+            class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs mono focus:outline-none focus:border-green-400">
+          <textarea id="set_trc20_memo" rows="2" placeholder="사용자에게 표시할 안내 메시지 (한국어)" 
+            class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-green-400 resize-none"></textarea>
+        </div>
+      </div>
+      <!-- ERC20 (Ethereum) -->
+      <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="font-bold text-sm text-blue-400">🔵 ERC20 (Ethereum) USDT</div>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <span class="text-xs text-gray-400">활성화</span>
+            <input type="checkbox" id="set_erc20_enabled" class="w-4 h-4 accent-blue-500">
+          </label>
+        </div>
+        <div class="space-y-1.5">
+          <input type="text" id="set_erc20_address" placeholder="0x... (ERC20 USDT 입금 주소)" 
+            class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs mono focus:outline-none focus:border-blue-400">
+          <textarea id="set_erc20_memo" rows="2" placeholder="사용자에게 표시할 안내 메시지 (한국어)" 
+            class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-blue-400 resize-none"></textarea>
+        </div>
+      </div>
+      <!-- BEP20 (BSC) -->
+      <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="font-bold text-sm text-yellow-400">🟡 BEP20 (BSC) USDT</div>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <span class="text-xs text-gray-400">활성화</span>
+            <input type="checkbox" id="set_bep20_enabled" class="w-4 h-4 accent-yellow-500">
+          </label>
+        </div>
+        <div class="space-y-1.5">
+          <input type="text" id="set_bep20_address" placeholder="0x... (BEP20 USDT 입금 주소)" 
+            class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs mono focus:outline-none focus:border-yellow-400">
+          <textarea id="set_bep20_memo" rows="2" placeholder="사용자에게 표시할 안내 메시지 (한국어)" 
+            class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+        </div>
+      </div>
+      <!-- 최소 입금액 -->
+      <div class="flex items-center gap-3">
+        <label class="text-xs text-gray-400 shrink-0">최소 입금액 (USDT)</label>
+        <input type="number" id="set_min_amount" value="1" min="0.1" step="0.1"
+          class="w-28 bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400">
+      </div>
+      <button onclick="saveDepositSettings()" 
+        class="w-full py-2.5 bg-yellow-600 hover:bg-yellow-700 rounded-xl text-sm font-bold transition">
+        💾 입금 설정 저장
+      </button>
     </div>
   </div>
 
