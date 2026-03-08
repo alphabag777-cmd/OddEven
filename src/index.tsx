@@ -117,6 +117,14 @@ async function getUserBySid(db: D1Database, sid: string) {
   return getUser(db, uid)
 }
 
+// 관리자 활동 로그 기록
+async function writeAdminLog(db: D1Database, adminId: string, adminUsername: string, action: string, targetUserId: string|null, targetUsername: string|null, detail: object) {
+  const id = crypto.randomUUID().replace(/-/g,'')
+  await db.prepare(
+    'INSERT INTO admin_logs (id,admin_id,admin_username,action,target_user_id,target_username,detail,created_at) VALUES (?,?,?,?,?,?,?,?)'
+  ).bind(id, adminId, adminUsername, action, targetUserId||null, targetUsername||null, JSON.stringify(detail), Date.now()).run()
+}
+
 // 만료 세션 주기적 정리 (요청마다 5% 확률로 실행)
 async function cleanupSessions(db: D1Database) {
   if (Math.random() > 0.05) return
@@ -473,6 +481,20 @@ app.post('/api/withdraw', async (c) => {
   if (user.total_bet_amount < minBetRequired)
     return c.json({ error:'BET_REQUIREMENT', required: minBetRequired, current: user.total_bet_amount }, 400)
 
+  // 일일 출금 한도 확인
+  const dailyLimitRow = await c.env.DB.prepare("SELECT value FROM site_settings WHERE key='daily_withdraw_limit'").first<{value:string}>()
+  const dailyLimit = parseFloat(dailyLimitRow?.value || '0')
+  if (dailyLimit > 0) {
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0)
+    const todayTs = todayStart.getTime()
+    const todayTotal = await c.env.DB.prepare(
+      "SELECT COALESCE(SUM(amount),0) as total FROM withdraw_requests WHERE user_id=? AND created_at>=? AND status!='rejected' AND status!='cancelled'"
+    ).bind(user.id, todayTs).first<{total:number}>()
+    const usedToday = todayTotal?.total || 0
+    if (usedToday + amt > dailyLimit)
+      return c.json({ error:'DAILY_LIMIT', limit: dailyLimit, used: usedToday, remaining: Math.max(0, dailyLimit - usedToday) }, 400)
+  }
+
   // 중복 출금 신청 확인
   const pending = await c.env.DB.prepare("SELECT id FROM withdraw_requests WHERE user_id=? AND status='pending'").bind(user.id).first()
   if (pending) return c.json({ error:'WITHDRAW_PENDING' }, 400)
@@ -675,12 +697,20 @@ app.get('/api/mypage', async (c) => {
   const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
 
+  const page   = Math.max(1, parseInt(c.req.query('page') || '1'))
+  const plimit  = 20
+  const poffset = (page - 1) * plimit
+
   const bets = await c.env.DB.prepare(`
     SELECT b.*, r.result FROM bets b
     JOIN rounds r ON b.round_id = r.id
     WHERE b.user_id=? AND b.settled=1
-    ORDER BY b.created_at DESC LIMIT 50
-  `).bind(user.id).all<any>()
+    ORDER BY b.created_at DESC LIMIT ? OFFSET ?
+  `).bind(user.id, plimit, poffset).all<any>()
+
+  const totalRow = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM bets WHERE user_id=? AND settled=1').bind(user.id).first<{cnt:number}>()
+  const totalCount = totalRow?.cnt || 0
+  const totalPages = Math.ceil(totalCount / plimit)
 
   const myBets = bets.results || []
   const wins   = myBets.filter((b:any) => b.win).length
@@ -699,7 +729,8 @@ app.get('/api/mypage', async (c) => {
       totalWagered: r2(totalWagered), totalWon: r2(totalWon),
       netProfit: r2(totalWon - totalWagered),
       referralEarnings: user.referral_earnings
-    }
+    },
+    page, totalPages, totalCount
   })
 })
 
@@ -784,9 +815,10 @@ app.post('/api/translate', async (c) => {
 
 app.get('/api/notices', async (c) => {
   const lang = c.req.query('lang') || 'ko'
+  const now  = Date.now()
   const notices = await c.env.DB.prepare(
-    "SELECT id, content, content_en, content_zh, content_ja, type, created_at FROM notices WHERE is_active=1 ORDER BY created_at DESC LIMIT 5"
-  ).all<any>()
+    "SELECT id, content, content_en, content_zh, content_ja, type, created_at, publish_at FROM notices WHERE is_active=1 AND (publish_at=0 OR publish_at IS NULL OR publish_at<=?) ORDER BY created_at DESC LIMIT 5"
+  ).bind(now).all<any>()
   const result = (notices.results || []).map((n: any) => ({
     ...n,
     displayContent: (lang === 'en' && n.content_en) ? n.content_en
@@ -800,9 +832,10 @@ app.get('/api/notices', async (c) => {
 // 공지사항 최신 1건 (팝업용)
 app.get('/api/notice/latest', async (c) => {
   const lang = c.req.query('lang') || 'ko'
+  const now  = Date.now()
   const notice = await c.env.DB.prepare(
-    "SELECT id, content, content_en, content_zh, content_ja, type, created_at FROM notices WHERE is_active=1 ORDER BY created_at DESC LIMIT 1"
-  ).first<any>()
+    "SELECT id, content, content_en, content_zh, content_ja, type, created_at, publish_at FROM notices WHERE is_active=1 AND (publish_at=0 OR publish_at IS NULL OR publish_at<=?) ORDER BY created_at DESC LIMIT 1"
+  ).bind(now).first<any>()
   if (!notice) return c.json({ notice: null })
   const displayContent = (lang === 'en' && notice.content_en) ? notice.content_en
     : (lang === 'zh' && notice.content_zh) ? notice.content_zh
@@ -813,14 +846,16 @@ app.get('/api/notice/latest', async (c) => {
 
 app.post('/api/admin/notice', async (c) => {
   if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const { content, content_en, content_zh, content_ja, type } = await c.req.json()
+  const { content, content_en, content_zh, content_ja, type, publish_at } = await c.req.json()
   if (!content || content.trim().length === 0) return c.json({ error:'EMPTY_CONTENT' }, 400)
   const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   const now = Date.now()
+  // publish_at: 0 또는 null이면 즉시 발행, 미래 timestamp이면 예약
+  const pubAt = publish_at && parseInt(publish_at) > now ? parseInt(publish_at) : 0
   await c.env.DB.prepare(
-    'INSERT INTO notices (id, content, content_en, content_zh, content_ja, type, is_active, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,1,?,?,?)'
-  ).bind(uid(), content.trim(), content_en||'', content_zh||'', content_ja||'', type || 'info', user!.id, now, now).run()
-  return c.json({ success: true })
+    'INSERT INTO notices (id, content, content_en, content_zh, content_ja, type, is_active, created_by, created_at, updated_at, publish_at) VALUES (?,?,?,?,?,?,1,?,?,?,?)'
+  ).bind(uid(), content.trim(), content_en||'', content_zh||'', content_ja||'', type || 'info', user!.id, now, now, pubAt).run()
+  return c.json({ success: true, scheduled: pubAt > 0, publishAt: pubAt })
 })
 
 app.post('/api/admin/notice/delete', async (c) => {
@@ -828,6 +863,19 @@ app.post('/api/admin/notice/delete', async (c) => {
   const { noticeId } = await c.req.json()
   await c.env.DB.prepare('UPDATE notices SET is_active=0 WHERE id=?').bind(noticeId).run()
   return c.json({ success: true })
+})
+
+// 관리자용 공지 조회 (예약 공지 포함)
+app.get('/api/admin/notices', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const notices = await c.env.DB.prepare(
+    "SELECT id, content, type, publish_at, created_at FROM notices WHERE is_active=1 ORDER BY created_at DESC LIMIT 20"
+  ).all<any>()
+  const now = Date.now()
+  return c.json({ notices: (notices.results||[]).map((n:any) => ({
+    ...n,
+    scheduled: n.publish_at > 0 && n.publish_at > now
+  })) })
 })
 
 // ─────────────────────────────────────────────
@@ -1054,21 +1102,27 @@ app.post('/api/admin/faq/delete', async (c) => {
 
 // 관리자 유저 메모 업데이트
 app.post('/api/admin/user/memo', async (c) => {
-  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const admin = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!admin || !admin.is_admin) return c.json({ error:'FORBIDDEN' }, 403)
   const { userId, memo } = await c.req.json()
+  const target = await getUser(c.env.DB, userId)
   await c.env.DB.prepare('UPDATE users SET admin_memo=? WHERE id=?').bind(memo||'', userId).run()
+  await writeAdminLog(c.env.DB, admin.id, admin.username, 'memo_update', userId, target?.username||null, { memo })
   return c.json({ success: true })
 })
 
 // 관리자 비밀번호 강제 초기화
 app.post('/api/admin/user/reset-password', async (c) => {
-  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const admin = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!admin || !admin.is_admin) return c.json({ error:'FORBIDDEN' }, 403)
   const { userId, newPassword } = await c.req.json()
   if (!newPassword || newPassword.length < 6) return c.json({ error:'PASSWORD_SHORT' }, 400)
   const hash = await hashPassword(newPassword)
+  const target = await getUser(c.env.DB, userId)
   await c.env.DB.prepare('UPDATE users SET password_hash=?, login_fail_count=0, locked_until=0 WHERE id=?').bind(hash, userId).run()
   // 해당 유저 세션 전체 삭제
   await c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId).run()
+  await writeAdminLog(c.env.DB, admin.id, admin.username, 'reset_password', userId, target?.username||null, {})
   return c.json({ success: true })
 })
 
@@ -1173,7 +1227,8 @@ app.get('/api/admin/withdraws', async (c) => {
 })
 
 app.post('/api/admin/withdraw/approve', async (c) => {
-  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const admin = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!admin || !admin.is_admin) return c.json({ error:'FORBIDDEN' }, 403)
   const { requestId, txHash } = await c.req.json()
   const req = await c.env.DB.prepare('SELECT * FROM withdraw_requests WHERE id=?').bind(requestId).first<any>()
   if (!req) return c.json({ error:'NOT_FOUND' }, 404)
@@ -1184,11 +1239,13 @@ app.post('/api/admin/withdraw/approve', async (c) => {
     c.env.DB.prepare("UPDATE withdraw_requests SET status='approved', processed_at=?, tx_hash=? WHERE id=?").bind(Date.now(), finalTx, requestId),
     c.env.DB.prepare('UPDATE users SET total_withdraw=total_withdraw+? WHERE id=?').bind(req.amount, req.user_id)
   ])
+  await writeAdminLog(c.env.DB, admin.id, admin.username, 'approve_withdraw', req.user_id, req.username, { requestId, amount: req.amount, txHash: finalTx })
   return c.json({ success:true })
 })
 
 app.post('/api/admin/withdraw/reject', async (c) => {
-  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const admin = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!admin || !admin.is_admin) return c.json({ error:'FORBIDDEN' }, 403)
   const { requestId, note } = await c.req.json()
   const req = await c.env.DB.prepare('SELECT * FROM withdraw_requests WHERE id=?').bind(requestId).first<any>()
   if (!req) return c.json({ error:'NOT_FOUND' }, 404)
@@ -1198,6 +1255,7 @@ app.post('/api/admin/withdraw/reject', async (c) => {
     c.env.DB.prepare("UPDATE withdraw_requests SET status='rejected', processed_at=?, note=? WHERE id=?").bind(Date.now(), note||'', requestId),
     c.env.DB.prepare('UPDATE users SET balance=balance+? WHERE id=?').bind(req.amount, req.user_id)
   ])
+  await writeAdminLog(c.env.DB, admin.id, admin.username, 'reject_withdraw', req.user_id, req.username, { requestId, amount: req.amount, note })
   return c.json({ success:true })
 })
 
@@ -1228,12 +1286,14 @@ app.get('/api/admin/users', async (c) => {
   })
 })
 app.post('/api/admin/user/balance', async (c) => {
-  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const admin = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!admin || !admin.is_admin) return c.json({ error:'FORBIDDEN' }, 403)
   const { userId, amount, type } = await c.req.json()
   const amt = parseFloat(amount)
   if (!amt) return c.json({ error:'INVALID_AMOUNT' }, 400)
 
   const logId = uid()
+  const target = await getUser(c.env.DB, userId)
   if (type === 'set') {
     await c.env.DB.batch([
       c.env.DB.prepare('UPDATE users SET balance=? WHERE id=?').bind(amt, userId),
@@ -1246,13 +1306,17 @@ app.post('/api/admin/user/balance', async (c) => {
     ])
   }
   const updated = await getUser(c.env.DB, userId)
+  await writeAdminLog(c.env.DB, admin.id, admin.username, type==='set'?'balance_set':'balance_add', userId, target?.username||null, { type, amount: amt, newBalance: updated?.balance||0 })
   return c.json({ success:true, balance: updated?.balance || 0 })
 })
 
 app.post('/api/admin/user/ban', async (c) => {
-  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const admin = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!admin || !admin.is_admin) return c.json({ error:'FORBIDDEN' }, 403)
   const { userId, ban } = await c.req.json()
+  const target = await getUser(c.env.DB, userId)
   await c.env.DB.prepare('UPDATE users SET is_banned=? WHERE id=?').bind(ban ? 1 : 0, userId).run()
+  await writeAdminLog(c.env.DB, admin.id, admin.username, ban?'ban':'unban', userId, target?.username||null, {})
   return c.json({ success:true })
 })
 
@@ -1362,6 +1426,8 @@ app.post('/api/admin/deposit/manual', async (c) => {
   ])
 
   const updated = await getUser(c.env.DB, userId)
+  const adminUser = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (adminUser) await writeAdminLog(c.env.DB, adminUser.id, adminUser.username, 'manual_deposit', userId, target.username, { amount: amt, txHash: finalTx, network: network||'manual', memo: memo||'관리자 수동 입금' })
   return c.json({ success:true, balance: updated?.balance||0, txId: logId })
 })
 
@@ -1382,6 +1448,8 @@ app.post('/api/admin/withdraw/approve', async (c) => {
     c.env.DB.prepare("UPDATE withdraw_requests SET status='approved', processed_at=?, tx_hash=? WHERE id=?").bind(Date.now(), finalTx, requestId),
     c.env.DB.prepare('UPDATE users SET total_withdraw=total_withdraw+? WHERE id=?').bind(req.amount, req.user_id)
   ])
+  const adminUser2 = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (adminUser2) await writeAdminLog(c.env.DB, adminUser2.id, adminUser2.username, 'approve_withdraw', req.user_id, req.username, { requestId, amount: req.amount, txHash: finalTx })
   return c.json({ success:true, txHash: finalTx })
 })
 
@@ -1459,6 +1527,306 @@ app.get('/api/game-settings', async (c) => {
     withdrawFee:     parseFloat(s['withdraw_fee']          || '1'),
     minWithdraw:     parseFloat(s['withdraw_min_amount']   || '1'),
     betRequirement:  parseFloat(s['withdraw_bet_requirement'] || '0.5'),
+  })
+})
+
+// ─────────────────────────────────────────────
+// API: 유저 개인 메시지 (읽지않은 메시지 조회 + 읽음 처리)
+// ─────────────────────────────────────────────
+app.get('/api/my-messages', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+  const msgs = await c.env.DB.prepare(
+    'SELECT * FROM user_messages WHERE user_id=? AND is_read=0 ORDER BY created_at DESC LIMIT 5'
+  ).bind(user.id).all<any>()
+  return c.json({ messages: msgs.results || [] })
+})
+
+app.post('/api/my-messages/read', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+  const { messageId } = await c.req.json()
+  await c.env.DB.prepare('UPDATE user_messages SET is_read=1 WHERE id=? AND user_id=?').bind(messageId, user.id).run()
+  return c.json({ success: true })
+})
+
+// API: 관리자 - 대량 메시지 발송
+app.post('/api/admin/message/broadcast', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { message, filter } = await c.req.json()
+  // filter: 'all' | 'inactive' (7일 이상 미접속) | 'high_roller' (총베팅 100 이상)
+  if (!message || message.trim().length === 0) return c.json({ error:'EMPTY_MESSAGE' }, 400)
+
+  let query = 'SELECT id FROM users WHERE is_banned=0'
+  const params: any[] = []
+  const now = Date.now()
+
+  if (filter === 'inactive') {
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
+    query += ' AND (last_active IS NULL OR last_active < ?)'
+    params.push(sevenDaysAgo)
+  } else if (filter === 'high_roller') {
+    query += ' AND total_bet_amount >= 100'
+  } else if (filter === 'no_deposit') {
+    query += ' AND total_deposit = 0'
+  }
+
+  const users = await c.env.DB.prepare(query).bind(...params).all<any>()
+  const targets = users.results || []
+  if (targets.length === 0) return c.json({ success: true, sent: 0 })
+
+  // 배치로 메시지 삽입
+  const stmts = targets.map((u:any) =>
+    c.env.DB.prepare('INSERT INTO user_messages (id,user_id,message,is_read,created_at) VALUES (?,?,?,0,?)').bind(uid(), u.id, message.trim(), now)
+  )
+  // D1 batch 100개 제한
+  for (let i = 0; i < stmts.length; i += 50) {
+    await c.env.DB.batch(stmts.slice(i, i + 50))
+  }
+
+  return c.json({ success: true, sent: targets.length })
+})
+
+// ─────────────────────────────────────────────
+// API: 유저 개인 30일 손익 그래프
+// ─────────────────────────────────────────────
+app.get('/api/my-stats', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+
+  const days  = 30
+  const now   = Date.now()
+  const start = now - days * 24 * 60 * 60 * 1000
+
+  const bets = await c.env.DB.prepare(`
+    SELECT b.amount, b.win, b.payout, b.created_at
+    FROM bets b
+    WHERE b.user_id=? AND b.settled=1 AND b.created_at >= ?
+    ORDER BY b.created_at ASC
+  `).bind(user.id, start).all<any>()
+
+  // 일별 집계
+  const dayMap: Record<string, { bet: number; payout: number; count: number }> = {}
+  for (const b of (bets.results||[])) {
+    const d = new Date(b.created_at)
+    const key = `${d.getMonth()+1}/${d.getDate()}`
+    if (!dayMap[key]) dayMap[key] = { bet:0, payout:0, count:0 }
+    dayMap[key].bet    += b.amount
+    dayMap[key].payout += b.win ? b.payout : 0
+    dayMap[key].count  += 1
+  }
+
+  // 최근 30일 날짜 배열 생성
+  const labels: string[] = []
+  const profits: number[] = []
+  const betsArr: number[] = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now - i * 24 * 60 * 60 * 1000)
+    const key = `${d.getMonth()+1}/${d.getDate()}`
+    labels.push(key)
+    const day = dayMap[key] || { bet:0, payout:0, count:0 }
+    profits.push(parseFloat((day.payout - day.bet).toFixed(2)))
+    betsArr.push(parseFloat(day.bet.toFixed(2)))
+  }
+
+  // 전체 합산
+  const allBets   = (bets.results||[]).reduce((s:number, b:any) => s + b.amount, 0)
+  const allPayout = (bets.results||[]).filter((b:any) => b.win).reduce((s:number, b:any) => s + b.payout, 0)
+  const wins      = (bets.results||[]).filter((b:any) => b.win).length
+  const total     = (bets.results||[]).length
+
+  return c.json({
+    labels, profits, bets: betsArr,
+    summary: {
+      totalGames: total, wins,
+      winRate: total > 0 ? ((wins/total)*100).toFixed(1) : '0',
+      totalBet: parseFloat(allBets.toFixed(2)),
+      totalPayout: parseFloat(allPayout.toFixed(2)),
+      netProfit: parseFloat((allPayout - allBets).toFixed(2))
+    }
+  })
+})
+
+// ─────────────────────────────────────────────
+// API: 리더보드
+// ─────────────────────────────────────────────
+app.get('/api/leaderboard', async (c) => {
+  const type = c.req.query('type') || 'total_bet'  // total_bet | roi
+
+  let topBet: any[] = []
+  let topRoi: any[] = []
+
+  if (type === 'total_bet' || type === 'all') {
+    const rows = await c.env.DB.prepare(`
+      SELECT username,
+             total_bet_amount,
+             (SELECT COUNT(*) FROM bets WHERE user_id=users.id AND win=1 AND settled=1) as wins,
+             (SELECT COUNT(*) FROM bets WHERE user_id=users.id AND settled=1) as total_games
+      FROM users
+      WHERE total_bet_amount > 0 AND is_banned=0
+      ORDER BY total_bet_amount DESC
+      LIMIT 10
+    `).all<any>()
+    topBet = (rows.results||[]).map((u:any, i:number) => ({
+      rank: i+1,
+      username: u.username.substring(0,2)+'**',
+      totalBet: u.total_bet_amount,
+      wins: u.wins,
+      totalGames: u.total_games,
+      winRate: u.total_games > 0 ? ((u.wins/u.total_games)*100).toFixed(1) : '0'
+    }))
+  }
+
+  if (type === 'roi' || type === 'all') {
+    const rows = await c.env.DB.prepare(`
+      SELECT username,
+             total_bet_amount,
+             (SELECT COALESCE(SUM(payout),0) FROM bets WHERE user_id=users.id AND win=1 AND settled=1) as total_payout,
+             (SELECT COUNT(*) FROM bets WHERE user_id=users.id AND settled=1) as total_games
+      FROM users
+      WHERE total_bet_amount >= 10 AND is_banned=0
+      ORDER BY (
+        (SELECT COALESCE(SUM(payout),0) FROM bets WHERE user_id=users.id AND win=1 AND settled=1) - total_bet_amount
+      ) DESC
+      LIMIT 10
+    `).all<any>()
+    topRoi = (rows.results||[]).map((u:any, i:number) => ({
+      rank: i+1,
+      username: u.username.substring(0,2)+'**',
+      totalBet: u.total_bet_amount,
+      totalPayout: u.total_payout,
+      netProfit: parseFloat((u.total_payout - u.total_bet_amount).toFixed(2)),
+      totalGames: u.total_games,
+      roi: u.total_bet_amount > 0 ? (((u.total_payout - u.total_bet_amount)/u.total_bet_amount)*100).toFixed(1) : '0'
+    }))
+  }
+
+  return c.json({ topBet, topRoi })
+})
+
+// ─────────────────────────────────────────────
+// API: 관리자 대량 메시지 발송
+// ─────────────────────────────────────────────
+app.post('/api/admin/message/send', async (c) => {
+  const admin = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!admin || !admin.is_admin) return c.json({ error:'FORBIDDEN' }, 403)
+
+  const { title, content, filter } = await c.req.json()
+  if (!title?.trim() || !content?.trim()) return c.json({ error:'EMPTY_CONTENT' }, 400)
+
+  // filter: 'all' | 'active' | 'highroller' | 'inactive'
+  const now = Date.now()
+  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
+  const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000
+
+  let userRows: any
+  if (filter === 'active') {
+    // 최근 7일 내 베팅 유저
+    userRows = await c.env.DB.prepare(
+      `SELECT DISTINCT u.id FROM users u
+       INNER JOIN bets b ON b.user_id=u.id
+       WHERE b.created_at >= ? AND u.is_banned=0`
+    ).bind(sevenDaysAgo).all<any>()
+  } else if (filter === 'highroller') {
+    // 누적 베팅 100 USDT 이상
+    userRows = await c.env.DB.prepare(
+      'SELECT id FROM users WHERE total_bet_amount >= 100 AND is_banned=0'
+    ).all<any>()
+  } else if (filter === 'inactive') {
+    // 30일 이상 미접속 (last_login 기준, 없으면 created_at)
+    userRows = await c.env.DB.prepare(
+      'SELECT id FROM users WHERE (last_login IS NULL OR last_login < ?) AND is_banned=0'
+    ).bind(thirtyDaysAgo).all<any>()
+  } else {
+    // 전체 (밴 제외)
+    userRows = await c.env.DB.prepare('SELECT id FROM users WHERE is_banned=0').all<any>()
+  }
+
+  const users = userRows.results || []
+  if (users.length === 0) return c.json({ error:'NO_USERS', count: 0 }, 400)
+
+  // 배치 INSERT (D1 배치 한도 = 100)
+  const msgId = () => uid()
+  const ts = Date.now()
+  const chunkSize = 50
+  let sent = 0
+  for (let i = 0; i < users.length; i += chunkSize) {
+    const chunk = users.slice(i, i + chunkSize)
+    await c.env.DB.batch(
+      chunk.map((u:any) =>
+        c.env.DB.prepare(
+          'INSERT INTO user_messages (id,user_id,title,content,is_read,created_at) VALUES (?,?,?,?,0,?)'
+        ).bind(msgId(), u.id, title.trim(), content.trim(), ts)
+      )
+    )
+    sent += chunk.length
+  }
+
+  await writeAdminLog(c.env.DB, admin.id, admin.username, 'mass_message', null, null, { title, filter, sentCount: sent })
+  return c.json({ success:true, sentCount: sent })
+})
+
+// 유저 메시지 조회
+app.get('/api/my-messages', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+
+  const msgs = await c.env.DB.prepare(
+    'SELECT id,title,content,is_read,created_at FROM user_messages WHERE user_id=? ORDER BY created_at DESC LIMIT 20'
+  ).bind(user.id).all<any>()
+
+  const unread = await c.env.DB.prepare(
+    'SELECT COUNT(*) as cnt FROM user_messages WHERE user_id=? AND is_read=0'
+  ).bind(user.id).first<{cnt:number}>()
+
+  return c.json({ messages: msgs.results||[], unreadCount: unread?.cnt||0 })
+})
+
+// 메시지 읽음 처리
+app.post('/api/my-messages/read', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+  const { msgId } = await c.req.json()
+  if (msgId) {
+    await c.env.DB.prepare('UPDATE user_messages SET is_read=1 WHERE id=? AND user_id=?').bind(msgId, user.id).run()
+  } else {
+    await c.env.DB.prepare('UPDATE user_messages SET is_read=1 WHERE user_id=?').bind(user.id).run()
+  }
+  return c.json({ success:true })
+})
+
+// ─────────────────────────────────────────────
+// API: 관리자 활동 로그 조회
+// ─────────────────────────────────────────────
+app.get('/api/admin/logs', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const page   = Math.max(1, parseInt(c.req.query('page') || '1'))
+  const action = c.req.query('action') || ''
+  const plimit  = 30
+  const poffset = (page - 1) * plimit
+
+  const whereClause = action ? "WHERE action=?" : ""
+  const params      = action ? [action, plimit, poffset] : [plimit, poffset]
+
+  const logs = await c.env.DB.prepare(
+    `SELECT * FROM admin_logs ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+  ).bind(...params).all<any>()
+
+  const totalRow = await c.env.DB.prepare(
+    `SELECT COUNT(*) as cnt FROM admin_logs ${whereClause}`
+  ).bind(...(action ? [action] : [])).first<{cnt:number}>()
+
+  return c.json({
+    logs: (logs.results||[]).map((l:any) => ({
+      id: l.id,
+      adminUsername: l.admin_username,
+      action: l.action,
+      targetUsername: l.target_username,
+      detail: (() => { try { return JSON.parse(l.detail||'{}') } catch { return {} } })(),
+      createdAt: l.created_at
+    })),
+    page,
+    totalPages: Math.ceil((totalRow?.cnt||0)/plimit)
   })
 })
 
@@ -1591,6 +1959,7 @@ select option{background:#1a1a2e;color:#fff}
     <button onclick="showTab('dashboard')" id="t-dashboard" class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_dashboard">📊 투명성</button>
     <button onclick="showTab('referral')"  id="t-referral"  class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_referral">👥 추천수당</button>
     <button onclick="showTab('verify')"    id="t-verify"    class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_verify">🔍 검증</button>
+    <button onclick="showTab('leaderboard')" id="t-leaderboard" class="tab-off px-4 py-2.5 text-xs font-bold transition">🏆 랭킹</button>
     <button onclick="showTab('faq')"       id="t-faq"       class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_faq">❓ FAQ</button>
     <button onclick="showTab('support')"   id="t-support"   class="tab-off hidden px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_support">💬 문의</button>
     <button onclick="showTab('login')"     id="t-login"     class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="login">🔐 로그인</button>
@@ -1657,6 +2026,10 @@ select option{background:#1a1a2e;color:#fff}
             <!-- 예상 수령액 미리보기 -->
             <div id="payoutPreview" class="hidden mt-1.5 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg text-xs text-green-400 font-bold">
               예상 수령액: <span id="payoutPreviewAmt">0.00</span> USDT
+            </div>
+            <!-- 잔액 부족 경고 -->
+            <div id="betBalanceWarn" class="hidden mt-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-400 font-bold">
+              ⚠️ 잔액이 부족합니다 (현재: <span id="betBalanceCur">0.00</span> USDT)
             </div>
             <div class="flex gap-1.5 mt-2 flex-wrap">
               <button onclick="addBet(1)"   class="px-2 py-1 text-xs bg-white/10 rounded-lg hover:bg-white/20 transition">+1</button>
@@ -1738,6 +2111,14 @@ select option{background:#1a1a2e;color:#fff}
       <div class="glass rounded-xl p-3 text-center"><div class="text-2xl font-black text-yellow-400" id="mpNetProfit">0</div><div class="text-xs text-gray-400 mt-1" data-i18n="net_profit">순손익(USDT)</div></div>
       <div class="glass rounded-xl p-3 text-center"><div class="text-2xl font-black text-purple-400" id="mpRefEarnings">0</div><div class="text-xs text-gray-400 mt-1" data-i18n="ref_earnings">추천수당</div></div>
     </div>
+    <!-- 30일 손익 그래프 -->
+    <div class="glass rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="font-bold text-sm">📈 최근 30일 손익 그래프</div>
+        <div id="myStats30Summary" class="text-xs text-gray-400"></div>
+      </div>
+      <canvas id="myStats30Chart" height="120"></canvas>
+    </div>
     <div class="glass rounded-xl p-4">
       <div class="font-bold mb-3 text-sm" data-i18n="my_bet_history">📋 내 베팅 내역</div>
       <div class="overflow-x-auto">
@@ -1753,6 +2134,12 @@ select option{background:#1a1a2e;color:#fff}
           <tbody id="mpBetTable"><tr><td colspan="6" class="text-center text-gray-500 py-3" data-i18n="no_record">기록 없음</td></tr></tbody>
         </table>
       </div>
+      <!-- 베팅 내역 페이지네이션 -->
+      <div id="mpBetPager" class="flex items-center justify-between mt-3 hidden">
+        <button onclick="loadMypageBets(mpBetPage-1)" id="mpBetPrev" class="px-3 py-1.5 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition disabled:opacity-30">◀ 이전</button>
+        <span id="mpBetPageInfo" class="text-xs text-gray-400"></span>
+        <button onclick="loadMypageBets(mpBetPage+1)" id="mpBetNext" class="px-3 py-1.5 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition disabled:opacity-30">다음 ▶</button>
+      </div>
     </div>
     <div class="glass rounded-xl p-4">
       <div class="font-bold mb-3 text-sm" data-i18n="withdraw_history">📤 출금 내역</div>
@@ -1761,6 +2148,16 @@ select option{background:#1a1a2e;color:#fff}
     <div class="glass rounded-xl p-4">
       <div class="font-bold mb-3 text-sm">📥 입금 내역</div>
       <div id="depHistory" class="space-y-2"><div class="text-xs text-gray-500 text-center py-2">기록 없음</div></div>
+    </div>
+    <div class="glass rounded-xl p-4">
+      <!-- 메시지함 -->
+      <div class="flex items-center justify-between mb-3">
+        <div class="font-bold text-sm">📨 메시지함 <span id="msgUnreadBadge" class="hidden ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full font-black">0</span></div>
+        <button onclick="markAllMessagesRead()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">모두 읽음</button>
+      </div>
+      <div id="myMessageList" class="space-y-2 max-h-64 overflow-y-auto">
+        <div class="text-xs text-gray-500 text-center py-3">메시지 없음</div>
+      </div>
     </div>
     <div class="glass rounded-xl p-4">
       <div class="font-bold mb-3 text-sm">🔐 <span data-i18n="change_pw_title">비밀번호 변경</span></div>
@@ -2158,6 +2555,14 @@ select option{background:#1a1a2e;color:#fff}
         </div>
       </div>
       <button onclick="postNotice()" class="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">📢 공지 등록</button>
+      <!-- 예약 발행 -->
+      <div class="flex items-center gap-2 mt-1">
+        <label class="text-xs text-gray-400 whitespace-nowrap">⏰ 예약 발행:</label>
+        <input type="datetime-local" id="noticePublishAt"
+          class="flex-1 bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400">
+        <button onclick="clearPublishAt()" class="px-2 py-1.5 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">즉시</button>
+      </div>
+      <div class="text-xs text-gray-500">비워두면 즉시 발행, 날짜 지정 시 해당 시각에 자동 표시</div>
     </div>
     <div id="adNoticeList" class="space-y-1 text-xs"><div class="text-gray-500 text-center py-2">공지 없음</div></div>
   </div>
@@ -2450,6 +2855,12 @@ select option{background:#1a1a2e;color:#fff}
         <input type="number" id="cfg_l2" value="1.0" min="0" max="10" step="0.1"
           class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-400">
       </div>
+      <div class="col-span-2">
+        <label class="text-xs text-gray-400 block mb-1">🚧 일일 출금 한도 (USDT, 0=무제한)</label>
+        <input type="number" id="cfg_daily_wd_limit" value="0" min="0" step="1"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-400">
+        <div class="text-xs text-gray-500 mt-0.5">유저 1인당 하루 최대 출금 금액 (0으로 설정 시 무제한)</div>
+      </div>
     </div>
     <button onclick="saveGameSettings()" class="w-full py-2.5 bg-purple-600 hover:bg-purple-700 rounded-xl text-sm font-bold transition">
       💾 설정 저장
@@ -2513,6 +2924,85 @@ select option{background:#1a1a2e;color:#fff}
     </div>
     <div id="adFaqList" class="space-y-1 text-xs"><div class="text-gray-500 text-center py-2">FAQ 없음</div></div>
   </div>
+
+  <!-- ══ 관리자 대량 메시지 발송 ══ -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm text-yellow-400">📨 대량 메시지 발송</div>
+    </div>
+    <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-2 mb-3 text-xs text-blue-300">
+      필터 조건으로 대상 유저를 선택하고 메시지를 발송합니다. 유저 메시지함에 팝업으로 표시됩니다.
+    </div>
+    <div class="space-y-2">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">📋 발송 대상</label>
+        <select id="msgFilter" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none">
+          <option value="all">전체 유저 (밴 제외)</option>
+          <option value="active">활성 유저 (최근 7일 베팅)</option>
+          <option value="highroller">고액 베터 (누적 100 USDT+)</option>
+          <option value="inactive">비활성 유저 (30일+ 미접속)</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">📌 제목</label>
+        <input type="text" id="msgTitle" placeholder="메시지 제목" maxlength="100"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">💬 내용</label>
+        <textarea id="msgContent" rows="3" placeholder="메시지 내용을 입력하세요..." maxlength="500"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+      </div>
+      <button onclick="sendMassMessage()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-bold transition">
+        📨 메시지 발송
+      </button>
+    </div>
+  </div>
+
+  <!-- ══ 관리자 활동 로그 ══ -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm text-yellow-400">🔍 관리자 활동 로그</div>
+      <button onclick="loadAdminLogs(1)" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄</button>
+    </div>
+    <div class="flex flex-wrap gap-1 mb-3" id="adminLogFilterBtns">
+      <button onclick="setAdminLogFilter('')"                class="log-filter-btn active px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">전체</button>
+      <button onclick="setAdminLogFilter('balance_set')"    class="log-filter-btn px-2.5 py-1 rounded-full text-xs bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20">잔액설정</button>
+      <button onclick="setAdminLogFilter('balance_add')"    class="log-filter-btn px-2.5 py-1 rounded-full text-xs bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20">잔액추가</button>
+      <button onclick="setAdminLogFilter('manual_deposit')" class="log-filter-btn px-2.5 py-1 rounded-full text-xs bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20">수동입금</button>
+      <button onclick="setAdminLogFilter('approve_withdraw')" class="log-filter-btn px-2.5 py-1 rounded-full text-xs bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20">출금승인</button>
+      <button onclick="setAdminLogFilter('reject_withdraw')"  class="log-filter-btn px-2.5 py-1 rounded-full text-xs bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20">출금거절</button>
+      <button onclick="setAdminLogFilter('ban')"             class="log-filter-btn px-2.5 py-1 rounded-full text-xs bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20">정지</button>
+      <button onclick="setAdminLogFilter('reset_password')"  class="log-filter-btn px-2.5 py-1 rounded-full text-xs bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20">비번초기화</button>
+      <button onclick="setAdminLogFilter('memo_update')"     class="log-filter-btn px-2.5 py-1 rounded-full text-xs bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20">메모</button>
+    </div>
+    <div id="adLogList" class="space-y-1.5 text-xs max-h-80 overflow-y-auto"><div class="text-gray-500 text-center py-3">로딩 중...</div></div>
+    <div id="adLogPager" class="flex justify-center gap-2 mt-3 hidden">
+      <button onclick="loadAdminLogs(adminLogPage-1)" id="adLogPrev" class="px-3 py-1 bg-white/10 rounded text-xs hover:bg-white/20 disabled:opacity-30">◀ 이전</button>
+      <span id="adLogPageInfo" class="text-xs text-gray-400 py-1"></span>
+      <button onclick="loadAdminLogs(adminLogPage+1)" id="adLogNext" class="px-3 py-1 bg-white/10 rounded text-xs hover:bg-white/20 disabled:opacity-30">다음 ▶</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 리더보드 탭 ══ -->
+<div id="p-leaderboard" class="hidden">
+  <div class="mb-4">
+    <h2 class="text-xl font-black mb-1">🏆 랭킹 리더보드</h2>
+    <p class="text-gray-400 text-sm">누적 베팅 TOP10 및 순이익 TOP10</p>
+  </div>
+  <!-- 탭 선택 -->
+  <div class="flex gap-2 mb-4">
+    <button onclick="loadLeaderboard('total_bet')" id="lb-tab-bet" class="lb-tab active px-4 py-2 rounded-lg text-sm font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 transition">💰 베팅액 순위</button>
+    <button onclick="loadLeaderboard('roi')"       id="lb-tab-roi" class="lb-tab px-4 py-2 rounded-lg text-sm font-bold bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20 transition">📈 순이익 순위</button>
+  </div>
+  <!-- TOP10 테이블 -->
+  <div class="glass rounded-xl p-4">
+    <div id="leaderboardContent">
+      <div class="text-gray-500 text-center py-8">🏆 랭킹을 불러오는 중...</div>
+    </div>
+  </div>
+  <div class="text-xs text-gray-500 text-center mt-3">* 아이디는 부분 마스킹 표시됩니다 · 최소 베팅 10 USDT 이상 유저만 순이익 랭킹에 표시</div>
 </div>
 
 <!-- ══ FAQ 탭 ══ -->

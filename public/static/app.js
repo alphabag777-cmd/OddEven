@@ -453,20 +453,21 @@ const errMap = code => {
 // 탭 네비게이션
 // ═══════════════════════════════════════════════
 function showTab(name) {
-  const tabs = ['game','mypage','wallet','dashboard','referral','verify','faq','support','login','register','admin']
+  const tabs = ['game','mypage','wallet','dashboard','referral','verify','leaderboard','faq','support','login','register','admin']
   tabs.forEach(t => {
     const p = $('p-' + t), btn = $('t-' + t)
     if (p) p.classList.toggle('hidden', t !== name)
     if (btn) { btn.classList.toggle('tab-on', t === name); btn.classList.toggle('tab-off', t !== name) }
   })
-  if (name === 'dashboard') loadDashboard()
-  if (name === 'referral')  loadReferral()
-  if (name === 'verify')    loadVerifyHist()
-  if (name === 'wallet')    loadWallet()
-  if (name === 'mypage')    loadMypage()
-  if (name === 'admin')     loadAdmin()
-  if (name === 'faq')       loadFAQ('')
-  if (name === 'support')   loadSupport()
+  if (name === 'dashboard')   loadDashboard()
+  if (name === 'referral')    loadReferral()
+  if (name === 'verify')      loadVerifyHist()
+  if (name === 'wallet')      loadWallet()
+  if (name === 'mypage')      loadMypage()
+  if (name === 'admin')       loadAdmin()
+  if (name === 'faq')         loadFAQ('')
+  if (name === 'support')     loadSupport()
+  if (name === 'leaderboard') loadLeaderboard('total_bet')
 }
 
 function updateUI() {
@@ -630,11 +631,27 @@ function updatePayoutPreview() {
   const amt = parseFloat($('betAmt')?.value || 0)
   const previewEl = $('payoutPreview')
   const amtEl = $('payoutPreviewAmt')
+  const warnEl = $('betBalanceWarn')
+  const warnCur = $('betBalanceCur')
   if (!previewEl || !amtEl) return
-  if (!amt || amt <= 0) { previewEl.classList.add('hidden'); return }
+  if (!amt || amt <= 0) {
+    previewEl.classList.add('hidden')
+    if (warnEl) warnEl.classList.add('hidden')
+    return
+  }
   const payout = Math.round(amt * currentPayout * 100) / 100
   amtEl.textContent = fmtU(payout)
   previewEl.classList.remove('hidden')
+  // 잔액 부족 경고
+  if (warnEl && warnCur) {
+    const balance = me ? parseFloat(me.balance || 0) : 0
+    if (me && amt > balance) {
+      warnCur.textContent = fmtU(balance)
+      warnEl.classList.remove('hidden')
+    } else {
+      warnEl.classList.add('hidden')
+    }
+  }
 }
 // 1/4, 1/2 비율 베팅
 function fracBet(frac) {
@@ -695,6 +712,56 @@ async function loadFeed() {
 // ═══════════════════════════════════════════════
 // 마이페이지
 // ═══════════════════════════════════════════════
+let mpBetPage = 1
+let mpBetTotalPages = 1
+
+async function loadMypageBets(page) {
+  page = Math.max(1, Math.min(page||1, mpBetTotalPages||99))
+  mpBetPage = page
+  const tbl = $('mpBetTable')
+  if (!tbl) return
+  const data = await api('/api/mypage?page=' + page)
+  if (data.error) return
+  mpBetTotalPages = data.totalPages || 1
+
+  // 통계 업데이트 (첫 페이지만)
+  if (page === 1) {
+    const s = data.stats
+    if ($('mpTotalGames')) $('mpTotalGames').textContent = data.totalCount || s.totalGames
+    if ($('mpWinRate'))    $('mpWinRate').textContent    = s.winRate + '%'
+    if ($('mpNetProfit'))  {
+      $('mpNetProfit').textContent = (s.netProfit >= 0 ? '+' : '') + fmtU(s.netProfit)
+      $('mpNetProfit').className = 'text-2xl font-black ' + (s.netProfit >= 0 ? 'text-green-400' : 'text-red-400')
+    }
+    if ($('mpRefEarnings')) $('mpRefEarnings').textContent = fmtU(s.referralEarnings)
+  }
+
+  // 페이지네이션
+  const pager = $('mpBetPager')
+  const pageInfo = $('mpBetPageInfo')
+  if (pager) {
+    if (mpBetTotalPages > 1) { pager.classList.remove('hidden') } else { pager.classList.add('hidden') }
+  }
+  if (pageInfo) pageInfo.textContent = `${page} / ${mpBetTotalPages} 페이지`
+  const prev = $('mpBetPrev'), next = $('mpBetNext')
+  if (prev) prev.disabled = page <= 1
+  if (next) next.disabled = page >= mpBetTotalPages
+
+  if (data.bets.length === 0) {
+    tbl.innerHTML = `<tr><td colspan="6" class="text-center text-gray-500 py-3">${t('no_record')}</td></tr>`
+  } else {
+    tbl.innerHTML = data.bets.map(b => `
+      <tr class="border-b border-white/5 hover:bg-white/5">
+        <td class="py-1.5 px-2 font-bold">#${b.roundId}</td>
+        <td class="py-1.5 px-2"><span class="px-2 py-0.5 rounded-full text-xs ${b.choice==='odd'?'bg-red-500/20 text-red-400':'bg-blue-500/20 text-blue-400'}">${b.choice==='odd'?t('odd'):t('even')}</span></td>
+        <td class="py-1.5 px-2"><span class="px-2 py-0.5 rounded-full text-xs ${b.result==='odd'?'bg-red-500/20 text-red-400':'bg-blue-500/20 text-blue-400'}">${b.result==='odd'?t('odd'):t('even')}</span></td>
+        <td class="py-1.5 px-2 text-right font-bold">${fmtU(b.amount)}</td>
+        <td class="py-1.5 px-2 text-right ${b.win?'text-green-400 font-black':'text-red-400'}">${b.win?'+'+fmtU(b.payout):'-'+fmtU(b.amount)}</td>
+        <td class="py-1.5 px-2 text-right text-gray-500">${ago(b.timestamp)}</td>
+      </tr>`).join('')
+  }
+}
+
 async function loadMypage() {
   if (!me) {
     $('mypageNeedLogin').classList.remove('hidden')
@@ -704,33 +771,11 @@ async function loadMypage() {
   $('mypageNeedLogin').classList.add('hidden')
   $('mypageInfo').classList.remove('hidden')
 
-  const data = await api('/api/mypage')
-  if (data.error) return
-  const s = data.stats
-  if ($('mpTotalGames')) $('mpTotalGames').textContent = s.totalGames
-  if ($('mpWinRate'))    $('mpWinRate').textContent    = s.winRate + '%'
-  if ($('mpNetProfit'))  {
-    $('mpNetProfit').textContent = (s.netProfit >= 0 ? '+' : '') + fmtU(s.netProfit)
-    $('mpNetProfit').className = 'text-2xl font-black ' + (s.netProfit >= 0 ? 'text-green-400' : 'text-red-400')
-  }
-  if ($('mpRefEarnings')) $('mpRefEarnings').textContent = fmtU(s.referralEarnings)
-
-  const tbl = $('mpBetTable')
-  if (tbl) {
-    if (data.bets.length === 0) {
-      tbl.innerHTML = `<tr><td colspan="6" class="text-center text-gray-500 py-3">${t('no_record')}</td></tr>`
-    } else {
-      tbl.innerHTML = data.bets.map(b => `
-        <tr class="border-b border-white/5 hover:bg-white/5">
-          <td class="py-1.5 px-2 font-bold">#${b.roundId}</td>
-          <td class="py-1.5 px-2"><span class="px-2 py-0.5 rounded-full text-xs ${b.choice==='odd'?'bg-red-500/20 text-red-400':'bg-blue-500/20 text-blue-400'}">${b.choice==='odd'?t('odd'):t('even')}</span></td>
-          <td class="py-1.5 px-2"><span class="px-2 py-0.5 rounded-full text-xs ${b.result==='odd'?'bg-red-500/20 text-red-400':'bg-blue-500/20 text-blue-400'}">${b.result==='odd'?t('odd'):t('even')}</span></td>
-          <td class="py-1.5 px-2 text-right font-bold">${fmtU(b.amount)}</td>
-          <td class="py-1.5 px-2 text-right ${b.win?'text-green-400 font-black':'text-red-400'}">${b.win?'+'+fmtU(b.payout):'-'+fmtU(b.amount)}</td>
-          <td class="py-1.5 px-2 text-right text-gray-500">${ago(b.timestamp)}</td>
-        </tr>`).join('')
-    }
-  }
+  // 베팅 내역 (페이지네이션으로 분리)
+  mpBetPage = 1
+  await loadMypageBets(1)
+  loadMyStats30()  // 30일 손익 그래프
+  loadMyMessages() // 메시지함
 
   // 출금 내역
   const wdData = await api('/api/withdraw/status')
@@ -996,6 +1041,7 @@ async function doWithdraw() {
   if (data.error) {
     let msg = errMap(data.error)
     if (data.error === 'BET_REQUIREMENT') msg += ` (${fmtU(data.current||0)}/${fmtU(data.required||0)} USDT)`
+    if (data.error === 'DAILY_LIMIT') msg = `⚠️ 일일 출금 한도 초과 (한도: ${fmtU(data.limit||0)} USDT, 잔여: ${fmtU(data.remaining||0)} USDT)`
     $('wdErr').textContent = msg; $('wdErr').classList.remove('hidden')
     return
   }
@@ -1282,6 +1328,7 @@ async function loadAdmin() {
   loadAdminFAQs()
   loadDepositSettings()  // 입금 설정 로드
   loadGameSettings()     // 게임/운영 설정 로드
+  loadAdminLogs(1)       // 관리자 활동 로그
 
   // 공지사항 Quill 에디터 초기화
   setTimeout(() => {
@@ -1548,23 +1595,25 @@ async function loadGameSettings() {
   if ($('cfg_wd_fee'))  $('cfg_wd_fee').value   = data.withdrawFee || 1
   if ($('cfg_min_wd'))  $('cfg_min_wd').value   = data.minWithdraw || 1
   if ($('cfg_bet_req')) $('cfg_bet_req').value   = Math.round((data.betRequirement || 0.5) * 100)
-  // L1/L2는 admin/settings에서 별도 로드
+  // L1/L2 + 일일 한도는 admin/settings에서 별도 로드
   const sData = await api('/api/admin/settings')
   if (sData.settings) {
     if ($('cfg_l1')) $('cfg_l1').value = parseFloat(sData.settings['game_l1_rate'] || '0.025') * 100
     if ($('cfg_l2')) $('cfg_l2').value = parseFloat(sData.settings['game_l2_rate'] || '0.010') * 100
+    if ($('cfg_daily_wd_limit')) $('cfg_daily_wd_limit').value = parseFloat(sData.settings['daily_withdraw_limit'] || '0')
   }
 }
 
 async function saveGameSettings() {
-  const payout  = parseFloat($('cfg_payout')?.value  || '1.9')
-  const minBet  = parseFloat($('cfg_min_bet')?.value || '0.1')
-  const maxBet  = parseFloat($('cfg_max_bet')?.value || '1000')
-  const wdFee   = parseFloat($('cfg_wd_fee')?.value  || '1')
-  const minWd   = parseFloat($('cfg_min_wd')?.value  || '1')
-  const betReq  = parseFloat($('cfg_bet_req')?.value || '50') / 100
-  const l1      = parseFloat($('cfg_l1')?.value      || '2.5') / 100
-  const l2      = parseFloat($('cfg_l2')?.value      || '1.0') / 100
+  const payout       = parseFloat($('cfg_payout')?.value       || '1.9')
+  const minBet       = parseFloat($('cfg_min_bet')?.value      || '0.1')
+  const maxBet       = parseFloat($('cfg_max_bet')?.value      || '1000')
+  const wdFee        = parseFloat($('cfg_wd_fee')?.value       || '1')
+  const minWd        = parseFloat($('cfg_min_wd')?.value       || '1')
+  const betReq       = parseFloat($('cfg_bet_req')?.value      || '50') / 100
+  const l1           = parseFloat($('cfg_l1')?.value           || '2.5') / 100
+  const l2           = parseFloat($('cfg_l2')?.value           || '1.0') / 100
+  const dailyWdLimit = parseFloat($('cfg_daily_wd_limit')?.value || '0')
 
   // 유효성 검사
   if (payout < 1.1 || payout > 2.0) { toast('❌ 배당률은 1.1x ~ 2.0x 사이여야 합니다', 'text-red-400'); return }
@@ -1581,6 +1630,7 @@ async function saveGameSettings() {
       withdraw_fee:             String(wdFee),
       withdraw_min_amount:      String(minWd),
       withdraw_bet_requirement: String(betReq),
+      daily_withdraw_limit:     String(dailyWdLimit),
     }})
   })
   if (data.success) {
@@ -1809,7 +1859,7 @@ async function loadNotices() {
 }
 
 async function loadAdminNotices() {
-  const data = await api('/api/notices')
+  const data = await api('/api/admin/notices')
   const el = $('adNoticeList')
   if (!el) return
   if (!data.notices || data.notices.length === 0) {
@@ -1822,11 +1872,15 @@ async function loadAdminNotices() {
     const displayContent = isHtml
       ? `<div class="notice-content text-xs text-white">${n.content}</div>`
       : `<span class="text-xs text-white">${n.content}</span>`
+    const scheduledBadge = n.scheduled
+      ? `<span class="text-xs text-yellow-400 shrink-0">⏰ ${new Date(n.publish_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>`
+      : ''
     return `
-    <div class="flex items-start justify-between p-2 bg-black/20 rounded-lg gap-2">
+    <div class="flex items-start justify-between p-2 bg-black/20 rounded-lg gap-2 ${n.scheduled ? 'border border-yellow-500/20' : ''}">
       <div class="flex items-start gap-2 min-w-0 flex-1">
         <span class="text-xs shrink-0 mt-0.5">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'}</span>
         ${displayContent}
+        ${scheduledBadge}
       </div>
       <button onclick="deleteNotice('${n.id}')" class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition shrink-0">${t('notice_delete')}</button>
     </div>`
@@ -1841,16 +1895,32 @@ async function postNotice() {
   const content_ja = $('noticeInputJa')?.value.trim()
   const type       = $('noticeType')?.value || 'info'
   if (!content) { toast('⚠️ 공지 내용을 입력하세요', 'text-yellow-400'); return }
-  const data = await api('/api/admin/notice', { method:'POST', body: JSON.stringify({content, content_en, content_zh, content_ja, type}) })
+
+  // 예약 발행 시간
+  const publishAtInput = $('noticePublishAt')?.value
+  let publish_at = 0
+  if (publishAtInput) {
+    const ts = new Date(publishAtInput).getTime()
+    if (!isNaN(ts) && ts > Date.now()) publish_at = ts
+  }
+
+  const data = await api('/api/admin/notice', { method:'POST', body: JSON.stringify({content, content_en, content_zh, content_ja, type, publish_at}) })
   if (data.success) {
     clearQuill('noticeEditorKo')
     clearQuill('noticeEditorEn')
     if ($('noticeInputZh')) $('noticeInputZh').value = ''
     if ($('noticeInputJa')) $('noticeInputJa').value = ''
-    toast('📢 공지 등록 완료', 'text-green-400')
+    if ($('noticePublishAt')) $('noticePublishAt').value = ''
+    const msg = data.scheduled ? `📅 예약 공지 등록 완료 (${new Date(data.publishAt).toLocaleString('ko-KR')})` : '📢 공지 등록 완료'
+    toast(msg, 'text-green-400')
     loadAdminNotices()
     loadNotices()
   } else toast('❌ ' + (data.error||'오류'), 'text-red-400')
+}
+
+function clearPublishAt() {
+  if ($('noticePublishAt')) $('noticePublishAt').value = ''
+  toast('✅ 즉시 발행으로 설정', 'text-blue-400')
 }
 
 async function deleteNotice(noticeId) {
@@ -2796,3 +2866,310 @@ async function checkNoticePopup() {
 }
 
 init()
+
+// ─────────────────────────────────────────────
+// 기능 1: 관리자 활동 로그
+// ─────────────────────────────────────────────
+let adminLogPage = 1
+let adminLogFilter = ''
+let adminLogTotalPages = 1
+
+function setAdminLogFilter(action) {
+  adminLogFilter = action
+  // 버튼 스타일
+  document.querySelectorAll('.log-filter-btn').forEach(b => {
+    b.classList.remove('active','bg-yellow-500/20','text-yellow-300','border-yellow-500/30')
+    b.classList.add('bg-white/10','text-gray-300','border-white/20')
+  })
+  const activeBtn = [...document.querySelectorAll('.log-filter-btn')].find(b => b.getAttribute('onclick') === `setAdminLogFilter('${action}')`)
+  if (activeBtn) {
+    activeBtn.classList.add('active','bg-yellow-500/20','text-yellow-300','border-yellow-500/30')
+    activeBtn.classList.remove('bg-white/10','text-gray-300','border-white/20')
+  }
+  loadAdminLogs(1)
+}
+
+async function loadAdminLogs(page) {
+  page = Math.max(1, Math.min(page||1, adminLogTotalPages||1))
+  adminLogPage = page
+  const el = $('adLogList')
+  if (!el) return
+  el.innerHTML = '<div class="text-gray-500 text-center py-3">로딩 중...</div>'
+  const params = new URLSearchParams({ page })
+  if (adminLogFilter) params.set('action', adminLogFilter)
+  const data = await api('/api/admin/logs?' + params)
+  adminLogTotalPages = data.totalPages || 1
+
+  const pager   = $('adLogPager')
+  const pageInfo = $('adLogPageInfo')
+  if (pager) {
+    if (adminLogTotalPages > 1) { pager.classList.remove('hidden') } else { pager.classList.add('hidden') }
+  }
+  if (pageInfo) pageInfo.textContent = `${page} / ${adminLogTotalPages}`
+  const prev = $('adLogPrev'), next = $('adLogNext')
+  if (prev) prev.disabled = page <= 1
+  if (next) next.disabled = page >= adminLogTotalPages
+
+  if (!data.logs || data.logs.length === 0) {
+    el.innerHTML = '<div class="text-gray-500 text-center py-3">로그 없음</div>'; return
+  }
+
+  const actionLabel = {
+    balance_set:'💰 잔액설정', balance_add:'💵 잔액추가', manual_deposit:'📥 수동입금',
+    approve_withdraw:'✅ 출금승인', reject_withdraw:'❌ 출금거절', ban:'🚫 계정정지',
+    unban:'✅ 정지해제', reset_password:'🔑 비번초기화', memo_update:'📝 메모수정'
+  }
+  const actionColor = {
+    balance_set:'text-blue-400', balance_add:'text-green-400', manual_deposit:'text-green-300',
+    approve_withdraw:'text-emerald-400', reject_withdraw:'text-red-400', ban:'text-red-500',
+    unban:'text-green-400', reset_password:'text-yellow-400', memo_update:'text-gray-300'
+  }
+
+  el.innerHTML = data.logs.map(log => {
+    const label = actionLabel[log.action] || log.action
+    const color = actionColor[log.action] || 'text-gray-300'
+    const detail = log.detail || {}
+    let detailStr = ''
+    if (detail.amount !== undefined) detailStr += ` ${detail.amount} USDT`
+    if (detail.txHash) detailStr += ` TX:${detail.txHash.slice(0,10)}…`
+    if (detail.note) detailStr += ` [${detail.note}]`
+    if (detail.memo) detailStr += ` "${String(detail.memo).slice(0,30)}"`
+    if (detail.newBalance !== undefined) detailStr += ` → ${detail.newBalance} USDT`
+    return `<div class="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 transition">
+      <span class="text-gray-500 w-28 shrink-0">${new Date(log.createdAt).toLocaleString('ko-KR', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+      <span class="font-bold ${color} w-28 shrink-0">${label}</span>
+      <span class="text-purple-300 shrink-0">👤 ${log.adminUsername}</span>
+      ${log.targetUsername ? `<span class="text-gray-400 shrink-0">→ ${log.targetUsername}</span>` : ''}
+      <span class="text-gray-500 truncate">${detailStr}</span>
+    </div>`
+  }).join('')
+}
+
+// ─────────────────────────────────────────────
+// 기능 4: 리더보드
+// ─────────────────────────────────────────────
+let currentLbType = 'total_bet'
+
+async function loadLeaderboard(type) {
+  currentLbType = type || currentLbType
+  const el = $('leaderboardContent')
+  if (!el) return
+
+  // 탭 스타일 업데이트
+  document.querySelectorAll('.lb-tab').forEach(b => {
+    b.classList.remove('active','bg-yellow-500/20','text-yellow-300','border-yellow-500/30')
+    b.classList.add('bg-white/10','text-gray-300','border-white/20')
+  })
+  const activeTab = currentLbType === 'total_bet' ? $('lb-tab-bet') : $('lb-tab-roi')
+  if (activeTab) {
+    activeTab.classList.add('active','bg-yellow-500/20','text-yellow-300','border-yellow-500/30')
+    activeTab.classList.remove('bg-white/10','text-gray-300','border-white/20')
+  }
+
+  el.innerHTML = '<div class="text-gray-500 text-center py-8">🏆 랭킹 로딩 중...</div>'
+  const data = await api('/api/leaderboard?type=all')
+  const list = currentLbType === 'total_bet' ? data.topBet : data.topRoi
+
+  if (!list || list.length === 0) {
+    el.innerHTML = '<div class="text-gray-500 text-center py-8">데이터 없음</div>'; return
+  }
+
+  const rankIcon = ['🥇','🥈','🥉']
+  const rankColors = ['text-yellow-400','text-gray-300','text-orange-400']
+
+  if (currentLbType === 'total_bet') {
+    el.innerHTML = `
+      <table class="w-full text-sm">
+        <thead><tr class="text-gray-400 border-b border-white/10 text-left">
+          <th class="py-2 px-3">순위</th>
+          <th class="py-2 px-3">아이디</th>
+          <th class="py-2 px-3 text-right">총 베팅액</th>
+          <th class="py-2 px-3 text-right">승률</th>
+          <th class="py-2 px-3 text-right">게임 수</th>
+        </tr></thead>
+        <tbody>${list.map((u,i) => `
+          <tr class="border-b border-white/5 hover:bg-white/5 transition ${i < 3 ? 'font-bold' : ''}">
+            <td class="py-3 px-3"><span class="${rankColors[i] || 'text-gray-400'} text-lg">${rankIcon[i] || (i+1)}</span></td>
+            <td class="py-3 px-3 text-white">${u.username}</td>
+            <td class="py-3 px-3 text-right text-yellow-300 font-black">${fmtU(u.totalBet)} USDT</td>
+            <td class="py-3 px-3 text-right ${parseFloat(u.winRate) >= 50 ? 'text-green-400' : 'text-red-400'}">${u.winRate}%</td>
+            <td class="py-3 px-3 text-right text-gray-400">${u.totalGames}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`
+  } else {
+    el.innerHTML = `
+      <table class="w-full text-sm">
+        <thead><tr class="text-gray-400 border-b border-white/10 text-left">
+          <th class="py-2 px-3">순위</th>
+          <th class="py-2 px-3">아이디</th>
+          <th class="py-2 px-3 text-right">순이익</th>
+          <th class="py-2 px-3 text-right">총 베팅</th>
+          <th class="py-2 px-3 text-right">ROI</th>
+        </tr></thead>
+        <tbody>${list.map((u,i) => `
+          <tr class="border-b border-white/5 hover:bg-white/5 transition ${i < 3 ? 'font-bold' : ''}">
+            <td class="py-3 px-3"><span class="${rankColors[i] || 'text-gray-400'} text-lg">${rankIcon[i] || (i+1)}</span></td>
+            <td class="py-3 px-3 text-white">${u.username}</td>
+            <td class="py-3 px-3 text-right ${u.netProfit >= 0 ? 'text-green-400' : 'text-red-400'} font-black">${u.netProfit >= 0 ? '+' : ''}${fmtU(u.netProfit)} USDT</td>
+            <td class="py-3 px-3 text-right text-gray-400">${fmtU(u.totalBet)}</td>
+            <td class="py-3 px-3 text-right ${parseFloat(u.roi) >= 0 ? 'text-green-400' : 'text-red-400'}">${u.roi}%</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`
+  }
+}
+
+// ─────────────────────────────────────────────
+// 기능 5: 유저 개인 30일 손익 그래프
+// ─────────────────────────────────────────────
+let myStats30ChartInst = null
+
+async function loadMyStats30() {
+  if (!me) return
+  const data = await api('/api/my-stats')
+  if (data.error) return
+
+  // 요약 표시
+  const s = data.summary
+  const summaryEl = $('myStats30Summary')
+  if (summaryEl) {
+    const profit = s.netProfit
+    summaryEl.innerHTML = `<span class="${profit >= 0 ? 'text-green-400' : 'text-red-400'} font-bold">${profit >= 0 ? '+' : ''}${fmtU(profit)} USDT</span> <span class="text-gray-500">30일 순손익 · ${s.totalGames}게임</span>`
+  }
+
+  // 차트 그리기
+  const canvas = $('myStats30Chart')
+  if (!canvas) return
+  if (myStats30ChartInst) { myStats30ChartInst.destroy(); myStats30ChartInst = null }
+
+  const ctx = canvas.getContext('2d')
+  const profits = data.profits
+  const colors  = profits.map(v => v >= 0 ? 'rgba(52,211,153,0.8)' : 'rgba(248,113,113,0.8)')
+  const borderColors = profits.map(v => v >= 0 ? 'rgba(52,211,153,1)' : 'rgba(248,113,113,1)')
+
+  myStats30ChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.labels,
+      datasets: [{
+        label: '일별 손익 (USDT)',
+        data: profits,
+        backgroundColor: colors,
+        borderColor: borderColors,
+        borderWidth: 1,
+        borderRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.parsed.y >= 0 ? '+' : ''}${fmtU(ctx.parsed.y)} USDT`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color:'#9ca3af', font:{ size:9 }, maxTicksLimit: 10 },
+          grid: { color:'rgba(255,255,255,0.05)' }
+        },
+        y: {
+          ticks: { color:'#9ca3af', font:{ size:10 } },
+          grid: { color:'rgba(255,255,255,0.05)' }
+        }
+      }
+    }
+  })
+}
+
+// ─────────────────────────────────────────────
+// 기능 8: 관리자 대량 메시지 발송 + 유저 메시지함
+// ─────────────────────────────────────────────
+async function sendMassMessage() {
+  const filter  = $('msgFilter')?.value || 'all'
+  const title   = $('msgTitle')?.value.trim()
+  const content = $('msgContent')?.value.trim()
+  if (!title) { toast('⚠️ 제목을 입력하세요', 'text-yellow-400'); return }
+  if (!content) { toast('⚠️ 내용을 입력하세요', 'text-yellow-400'); return }
+
+  const filterLabel = { all:'전체', active:'활성', highroller:'고액베터', inactive:'비활성' }
+  if (!confirm(`[${filterLabel[filter]||filter}] 유저에게 메시지를 발송하시겠습니까?\n\n제목: ${title}\n내용: ${content}`)) return
+
+  const data = await api('/api/admin/message/send', {
+    method: 'POST',
+    body: JSON.stringify({ filter, title, content })
+  })
+  if (data.success) {
+    toast(`✅ ${data.sentCount}명에게 발송 완료`, 'text-green-400')
+    if ($('msgTitle')) $('msgTitle').value = ''
+    if ($('msgContent')) $('msgContent').value = ''
+  } else {
+    const errMsg = data.error === 'NO_USERS' ? '대상 유저 없음' : (data.error || '오류')
+    toast('❌ ' + errMsg, 'text-red-400')
+  }
+}
+
+async function loadMyMessages() {
+  if (!me) return
+  const data = await api('/api/my-messages')
+  if (data.error) return
+
+  // 읽지 않은 배지
+  const badge = $('msgUnreadBadge')
+  if (badge) {
+    if (data.unreadCount > 0) {
+      badge.textContent = data.unreadCount
+      badge.classList.remove('hidden')
+    } else {
+      badge.classList.add('hidden')
+    }
+  }
+
+  const el = $('myMessageList')
+  if (!el) return
+  if (!data.messages || data.messages.length === 0) {
+    el.innerHTML = '<div class="text-xs text-gray-500 text-center py-3">메시지 없음</div>'
+    return
+  }
+
+  el.innerHTML = data.messages.map(msg => `
+    <div class="p-3 rounded-lg cursor-pointer transition ${msg.is_read ? 'bg-white/5' : 'bg-blue-500/10 border border-blue-500/20'}"
+         onclick="readMessage('${msg.id}', this)">
+      <div class="flex items-start justify-between gap-2">
+        <div class="font-bold text-xs text-white ${msg.is_read ? 'opacity-70' : ''}">${msg.title}${!msg.is_read ? ' <span class="text-blue-400">●</span>' : ''}</div>
+        <div class="text-xs text-gray-500 shrink-0">${new Date(msg.created_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+      <div class="text-xs text-gray-400 mt-1 msg-body ${msg.is_read ? '' : 'hidden'}">${msg.content}</div>
+    </div>`).join('')
+}
+
+async function readMessage(msgId, el) {
+  // 본문 토글
+  const body = el.querySelector('.msg-body')
+  if (body) body.classList.toggle('hidden')
+
+  // 읽음 처리
+  const isUnread = el.classList.contains('bg-blue-500/10')
+  if (isUnread) {
+    el.classList.remove('bg-blue-500/10','border','border-blue-500/20')
+    el.classList.add('bg-white/5')
+    await api('/api/my-messages/read', { method:'POST', body: JSON.stringify({ msgId }) })
+    // 배지 업데이트
+    const badge = $('msgUnreadBadge')
+    if (badge) {
+      const cur = parseInt(badge.textContent || '0') - 1
+      if (cur <= 0) badge.classList.add('hidden')
+      else badge.textContent = cur
+    }
+  }
+}
+
+async function markAllMessagesRead() {
+  if (!me) return
+  await api('/api/my-messages/read', { method:'POST', body: JSON.stringify({}) })
+  loadMyMessages()
+  toast('✅ 모두 읽음 처리', 'text-blue-400')
+}
