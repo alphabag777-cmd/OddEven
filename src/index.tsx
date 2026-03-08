@@ -911,6 +911,15 @@ app.post('/api/admin/inquiry/close', async (c) => {
   return c.json({ success: true })
 })
 
+// 관리자 - 특정 문의 상세 조회 (내용 전체)
+app.get('/api/inquiry/admin/:id', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const id = c.req.param('id')
+  const row = await c.env.DB.prepare('SELECT * FROM inquiries WHERE id=?').bind(id).first<any>()
+  if (!row) return c.json({ error:'NOT_FOUND' }, 404)
+  return c.json(row)
+})
+
 // ─────────────────────────────────────────────
 // API: FAQ
 // ─────────────────────────────────────────────

@@ -1729,26 +1729,45 @@ async function loadAdminInquiries(status) {
     el.innerHTML = '<div class="text-xs text-gray-500 text-center py-3">문의 없음</div>'; return
   }
   const statusCls = { pending:'text-orange-400', answered:'text-green-400', closed:'text-gray-400' }
-  el.innerHTML = data.inquiries.map(inq => `
+  const statusLabel = { pending:'대기중', answered:'답변완료', closed:'종료' }
+  const catLabel = { general:'일반', deposit:'입금', withdraw:'출금', bet:'게임', referral:'추천', other:'기타' }
+  el.innerHTML = data.inquiries.map(inq => {
+    // content에서 HTML 태그 제거해서 미리보기 텍스트 생성
+    const previewText = inq.content ? inq.content.replace(/<[^>]*>/g, '').substring(0, 120) + (inq.content.replace(/<[^>]*>/g,'').length > 120 ? '...' : '') : ''
+    return `
     <div class="p-3 bg-black/20 rounded-xl border border-white/10 text-xs">
       <div class="flex items-center justify-between gap-1 mb-1">
-        <div><span class="font-bold text-white">${inq.username}</span> <span class="text-gray-500">${inq.category}</span></div>
-        <span class="${statusCls[inq.status]||'text-gray-400'} shrink-0">${inq.status}</span>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="font-bold text-white">${inq.username}</span>
+          <span class="px-1.5 py-0.5 bg-white/10 text-gray-400 rounded text-xs">${catLabel[inq.category]||inq.category}</span>
+        </div>
+        <span class="px-2 py-0.5 rounded-full text-xs font-bold ${statusCls[inq.status]||'text-gray-400'} bg-white/5 shrink-0">${statusLabel[inq.status]||inq.status}</span>
       </div>
-      <div class="font-bold text-sm mb-1">${inq.title}</div>
-      <div class="text-gray-400 mb-2">${ago(inq.created_at)}</div>
-      ${inq.admin_reply ? `<div class="bg-blue-500/10 p-2 rounded text-blue-300 mb-2">💬 ${inq.admin_reply}</div>` : ''}
-      <div class="flex gap-1">
-        <button onclick="openAdminReply('${inq.id}','${inq.title.replace(/'/g,'')}')" class="px-2 py-1 bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600/30 transition">✏️ 답변</button>
+      <div class="font-bold text-sm text-white mb-1">${inq.title}</div>
+      ${previewText ? `<div class="text-gray-400 mb-1.5 leading-relaxed bg-black/20 p-2 rounded inquiry-content">${previewText}</div>` : ''}
+      <div class="text-gray-500 mb-2">${ago(inq.created_at)}</div>
+      ${inq.admin_reply ? `<div class="bg-blue-500/10 p-2 rounded text-blue-300 mb-2 text-xs border border-blue-500/20">💬 관리자 답변: <span class="inquiry-content">${inq.admin_reply.replace(/<[^>]*>/g,'').substring(0,80)}</span></div>` : ''}
+      <div class="flex gap-1 flex-wrap">
+        <button onclick="openAdminInquiryDetail('${inq.id}')" class="px-2 py-1 bg-white/10 text-gray-300 rounded hover:bg-white/20 transition">📄 내용 보기</button>
+        <button onclick="openAdminReply('${inq.id}','${inq.title.replace(/'/g,'\\'')}',\`${inq.content||''}\`)" class="px-2 py-1 bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600/30 transition">✏️ 답변</button>
         <button onclick="closeInquiry('${inq.id}')" class="px-2 py-1 bg-white/10 text-gray-400 rounded hover:bg-white/20 transition">✓ 종료</button>
       </div>
-    </div>`).join('')
+    </div>`
+  }).join('')
 }
 
-function openAdminReply(id, title) {
+function openAdminReply(id, title, content) {
   if ($('adReplyModal')) $('adReplyModal').classList.remove('hidden')
   if ($('adReplyInqId')) $('adReplyInqId').value = id
   if ($('adReplyTitle')) $('adReplyTitle').textContent = title
+  // 문의 내용 미리보기 표시
+  const previewEl = $('adReplyContentPreview')
+  if (previewEl && content) {
+    previewEl.innerHTML = content
+    previewEl.closest ? previewEl.closest('.adReplyPreviewWrap')?.classList.remove('hidden') : null
+    const wrap = document.getElementById('adReplyPreviewWrap')
+    if (wrap) wrap.classList.remove('hidden')
+  }
   // Quill 에디터 초기화
   setTimeout(() => {
     const q = initQuill('adReplyEditor', '답변 내용을 입력하세요...', [
@@ -1759,6 +1778,45 @@ function openAdminReply(id, title) {
     ])
     if (q) q.setContents([])
   }, 100)
+}
+
+async function openAdminInquiryDetail(id) {
+  const data = await api('/api/inquiry/admin/' + id)
+  if (!data || data.error) {
+    // 폴백: 목록에서 찾기
+    toast('❌ 문의 내용을 불러올 수 없습니다', 'text-red-400')
+    return
+  }
+  const catLabel = { general:'일반', deposit:'입금', withdraw:'출금', bet:'게임', referral:'추천', other:'기타' }
+  const statusLabel = { pending:'대기중', answered:'답변완료', closed:'종료' }
+  const modal = document.createElement('div')
+  modal.id = 'adminInqDetailModal'
+  modal.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4'
+  modal.innerHTML = `
+    <div class="bg-gray-900 rounded-2xl border border-white/20 w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 relative">
+      <button onclick="document.getElementById('adminInqDetailModal').remove()" class="absolute top-3 right-3 text-gray-400 hover:text-white text-xl">✕</button>
+      <div class="flex items-center gap-2 mb-3">
+        <span class="px-2 py-0.5 bg-white/10 text-gray-400 rounded text-xs">${catLabel[data.category]||data.category}</span>
+        <span class="text-xs text-gray-500">${data.username}</span>
+        <span class="text-xs text-gray-500 ml-auto">${ago(data.created_at)}</span>
+      </div>
+      <div class="font-bold text-white text-base mb-3">${data.title}</div>
+      <div class="bg-black/30 rounded-xl p-3 text-sm text-gray-300 mb-3 inquiry-content">${data.content||''}</div>
+      ${data.admin_reply ? `
+        <div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3">
+          <div class="text-blue-400 text-xs font-bold mb-1">💬 관리자 답변</div>
+          <div class="text-sm text-gray-200 inquiry-content">${data.admin_reply}</div>
+          <div class="text-xs text-gray-500 mt-1">${ago(data.admin_reply_at)}</div>
+        </div>` : ''}
+      <div class="flex gap-2 mt-4">
+        <button onclick="document.getElementById('adminInqDetailModal').remove(); openAdminReply('${data.id}','${(data.title||'').replace(/'/g,"\\'")}',\`${(data.content||'').replace(/`/g,'\\`')}\`)" class="flex-1 py-2 bg-blue-600/30 text-blue-300 rounded-xl hover:bg-blue-600/40 transition text-sm">✏️ 답변하기</button>
+        <button onclick="document.getElementById('adminInqDetailModal').remove()" class="px-4 py-2 bg-white/10 text-gray-400 rounded-xl hover:bg-white/20 transition text-sm">닫기</button>
+      </div>
+    </div>`
+  // 기존 모달 제거 후 추가
+  const existing = document.getElementById('adminInqDetailModal')
+  if (existing) existing.remove()
+  document.body.appendChild(modal)
 }
 
 function closeAdminReply() {
