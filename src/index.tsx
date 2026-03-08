@@ -713,6 +713,34 @@ app.get('/api/next-round-hash', async (c) => {
 // ─────────────────────────────────────────────
 // API: 공지사항
 // ─────────────────────────────────────────────
+// ── 번역 API (MyMemory 프록시) ──────────────────────────────────
+app.post('/api/translate', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { text, targets } = await c.req.json() as { text: string, targets: string[] }
+  if (!text || text.trim().length === 0) return c.json({ error:'EMPTY_TEXT' }, 400)
+
+  const cleanText = text.replace(/<[^>]*>/g, '').trim()  // HTML 태그 제거 후 번역
+  const results: Record<string, string> = {}
+
+  const langMap: Record<string, string> = { en:'en-US', zh:'zh-CN', ja:'ja-JP' }
+  const tgtList = (targets || ['en','zh','ja']).filter((t: string) => langMap[t])
+
+  for (const tgt of tgtList) {
+    try {
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanText)}&langpair=ko|${langMap[tgt]}`
+      const res = await fetch(url, { headers: { 'User-Agent': 'OddEvenGame/1.0' } })
+      const data = await res.json() as any
+      if (data?.responseStatus === 200) {
+        results[tgt] = data.responseData?.translatedText || ''
+      }
+    } catch (_) {
+      results[tgt] = ''
+    }
+  }
+
+  return c.json({ success: true, results })
+})
+
 app.get('/api/notices', async (c) => {
   const lang = c.req.query('lang') || 'ko'
   const notices = await c.env.DB.prepare(
@@ -816,16 +844,27 @@ app.get('/api/inquiries', async (c) => {
 app.post('/api/inquiry/create', async (c) => {
   const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
-  const { title, content, category } = await c.req.json()
+  const { title, content, category, attachments } = await c.req.json()
   if (!title || !content) return c.json({ error:'NEED_FIELDS' }, 400)
   if (title.length > 100) return c.json({ error:'TITLE_TOO_LONG' }, 400)
-  if (content.length > 2000) return c.json({ error:'CONTENT_TOO_LONG' }, 400)
+  if (content.length > 10000) return c.json({ error:'CONTENT_TOO_LONG' }, 400)
+
+  // 첨부 파일 정보를 content에 병합 (메타데이터만, Base64 데이터는 별도 저장)
+  let finalContent = content
+  let attachMeta: any[] = []
+  if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+    attachMeta = attachments.map((a: any) => ({ name: a.name, type: a.type, size: a.size }))
+    // 첨부 정보를 JSON 주석으로 content에 포함
+    const attachInfo = `\n\n<!-- ATTACHMENTS:${JSON.stringify(attachMeta)} -->`
+    finalContent = content + attachInfo
+  }
+
   const now = Date.now()
   const id  = uid()
   await c.env.DB.prepare(
     'INSERT INTO inquiries (id, user_id, username, title, content, category, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
-  ).bind(id, user.id, user.username, title, content, category||'general', 'pending', now, now).run()
-  return c.json({ success: true, id })
+  ).bind(id, user.id, user.username, title, finalContent, category||'general', 'pending', now, now).run()
+  return c.json({ success: true, id, attachCount: attachMeta.length })
 })
 
 app.get('/api/inquiry/:id', async (c) => {
@@ -1131,11 +1170,20 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
 .ql-snow .ql-stroke{stroke:#ccc!important}
 .ql-snow .ql-fill{fill:#ccc!important}
 .ql-snow .ql-picker{color:#ccc!important}
-.ql-snow .ql-picker-options{background:#2d3748!important;border:1px solid rgba(255,255,255,0.2)!important}
+.ql-snow .ql-picker-options{background:#2d3748!important;border:1px solid rgba(255,255,255,0.2)!important;z-index:9999!important}
 .ql-snow .ql-picker-item{color:#e2e8f0!important}
 .ql-snow .ql-active .ql-stroke,.ql-snow .ql-picker-label.ql-active .ql-stroke{stroke:#63b3ed!important}
 .ql-snow .ql-active .ql-fill,.ql-snow .ql-picker-label.ql-active .ql-fill{fill:#63b3ed!important}
 .ql-toolbar.ql-snow .ql-formats{margin-right:8px}
+/* select 드롭다운이 Quill 위로 나오도록 */
+select{position:relative;z-index:10}
+select option{background:#1a1a2e;color:#fff}
+/* 파일 첨부 영역 */
+.attach-zone{border:2px dashed rgba(255,255,255,0.2);border-radius:10px;padding:12px;text-align:center;cursor:pointer;transition:all .2s}
+.attach-zone:hover,.attach-zone.drag-over{border-color:#63b3ed;background:rgba(99,179,237,0.08)}
+.attach-preview{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.attach-item{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:3px 8px;font-size:11px}
+.attach-item button{color:#fc8181;background:none;border:none;cursor:pointer;font-size:12px;line-height:1}
 /* 공지 내용 렌더링 */
 .notice-content p{margin:0;line-height:1.5}
 .notice-content strong{font-weight:700}
@@ -1650,33 +1698,37 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
           <option value="warning">⚠️ 경고</option>
           <option value="danger">🚨 긴급</option>
         </select>
-        <span class="text-xs text-gray-400">한국어 작성 시 자동번역 버튼 사용 가능</span>
       </div>
-      <!-- Quill 에디터 (한국어) -->
+      <!-- Quill 에디터 (한국어) - 메인 입력 -->
       <div>
-        <div class="text-xs text-gray-400 mb-1">🇰🇷 한국어 내용 <span class="text-yellow-400">*</span></div>
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-xs text-gray-400">📝 공지 내용 <span class="text-yellow-400">*</span> <span class="text-gray-500">(한국어 입력 후 자동번역)</span></div>
+        </div>
         <div id="noticeEditorKo" style="max-height:180px;overflow-y:auto"></div>
         <input type="hidden" id="noticeInput">
       </div>
       <!-- 자동번역 버튼 -->
-      <button onclick="autoTranslateNotice()" class="w-full py-1.5 bg-indigo-600/50 hover:bg-indigo-600/80 border border-indigo-500/40 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1">
-        🌐 한국어 내용으로 영어·중국어·일본어 자동 채우기
+      <button onclick="autoTranslateNotice()" id="btnAutoTranslate" class="w-full py-2 bg-indigo-600/60 hover:bg-indigo-600 border border-indigo-500/50 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
+        <span id="translateSpinner" class="hidden">⏳</span>
+        🌐 자동번역 (영어·중국어·일본어)
       </button>
-      <!-- Quill 에디터 (영어) -->
-      <div>
-        <div class="text-xs text-gray-400 mb-1">🇺🇸 English (선택)</div>
-        <div id="noticeEditorEn" style="max-height:120px;overflow-y:auto"></div>
-        <input type="hidden" id="noticeInputEn">
-      </div>
-      <!-- 중국어/일본어 (텍스트) -->
-      <div class="grid grid-cols-2 gap-2">
+      <!-- 번역 결과 미리보기 (접힘 기본) -->
+      <div id="noticeTranslatePreview" class="hidden space-y-2 p-3 bg-black/20 rounded-lg border border-white/10">
+        <div class="text-xs text-indigo-400 font-bold mb-2">🌐 번역 결과 (수정 가능)</div>
         <div>
-          <div class="text-xs text-gray-400 mb-1">🇨🇳 中文 (선택)</div>
-          <textarea id="noticeInputZh" rows="2" placeholder="公告 (中文, 可选)" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+          <div class="text-xs text-gray-400 mb-1">🇺🇸 English</div>
+          <div id="noticeEditorEn" style="max-height:100px;overflow-y:auto"></div>
+          <input type="hidden" id="noticeInputEn">
         </div>
-        <div>
-          <div class="text-xs text-gray-400 mb-1">🇯🇵 日本語 (선택)</div>
-          <textarea id="noticeInputJa" rows="2" placeholder="お知らせ (日本語, 任意)" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <div class="text-xs text-gray-400 mb-1">🇨🇳 中文</div>
+            <textarea id="noticeInputZh" rows="2" class="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+          </div>
+          <div>
+            <div class="text-xs text-gray-400 mb-1">🇯🇵 日本語</div>
+            <textarea id="noticeInputJa" rows="2" class="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+          </div>
         </div>
       </div>
       <button onclick="postNotice()" class="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">📢 공지 등록</button>
@@ -1839,13 +1891,13 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
       <div class="space-y-3">
         <div>
           <label class="text-xs text-gray-400 block mb-1" data-i18n="inquiry_category">카테고리</label>
-          <select id="inqCat" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-400">
-            <option value="general" data-i18n="faq_cat_general">일반</option>
-            <option value="deposit" data-i18n="faq_cat_deposit">입금</option>
-            <option value="withdraw" data-i18n="faq_cat_withdraw">출금</option>
-            <option value="bet" data-i18n="faq_cat_bet">게임</option>
-            <option value="referral" data-i18n="faq_cat_referral">추천</option>
-            <option value="other">기타</option>
+          <select id="inqCat" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-400" style="background-color:#1e1b4b;position:relative;z-index:20">
+            <option value="general" style="background:#1e1b4b" data-i18n="faq_cat_general">일반</option>
+            <option value="deposit" style="background:#1e1b4b" data-i18n="faq_cat_deposit">입금</option>
+            <option value="withdraw" style="background:#1e1b4b" data-i18n="faq_cat_withdraw">출금</option>
+            <option value="bet" style="background:#1e1b4b" data-i18n="faq_cat_bet">게임</option>
+            <option value="referral" style="background:#1e1b4b" data-i18n="faq_cat_referral">추천</option>
+            <option value="other" style="background:#1e1b4b">기타</option>
           </select>
         </div>
         <div>
@@ -1858,6 +1910,21 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
           <div id="inqEditor" style="max-height:250px;overflow-y:auto"></div>
           <input type="hidden" id="inqContent">
           <div class="text-xs text-gray-500 text-right mt-0.5"><span id="inqCharCount">0</span> 자</div>
+        </div>
+        <!-- 파일 첨부 -->
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">📎 파일 첨부 <span class="text-gray-500">(최대 3개, 각 5MB / 이미지·PDF·문서)</span></label>
+          <div class="attach-zone" id="inqDropZone" onclick="$('inqFileInput').click()" 
+               ondragover="event.preventDefault();this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="handleInqDrop(event)">
+            <input type="file" id="inqFileInput" multiple accept="image/*,.pdf,.txt,.doc,.docx" class="hidden" onchange="handleInqFiles(this.files)">
+            <div class="text-gray-400 text-xs">
+              <i class="fas fa-cloud-upload-alt text-lg mb-1 block"></i>
+              클릭하거나 파일을 드래그하여 첨부
+            </div>
+          </div>
+          <div id="inqAttachPreview" class="attach-preview"></div>
         </div>
         <div id="inqErr" class="hidden text-red-400 text-xs bg-red-500/10 rounded-lg p-2"></div>
         <button onclick="submitInquiry()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold transition text-sm" data-i18n="inquiry_submit">문의 제출</button>

@@ -1383,16 +1383,62 @@ function clearQuill(containerId) {
 // 간이 자동번역 (한국어 → 영/중/일 로 동일 복사, 실제 번역 API 없으므로 원문 복사)
 // 실제 DeepL/Papago API 연동 시 여기를 교체
 async function autoTranslateNotice() {
-  const koHtml = getQuillHTML('noticeEditorKo')
   const koText = getQuillText('noticeEditorKo')
+  const koHtml = getQuillHTML('noticeEditorKo')
   if (!koText) { toast('⚠️ 한국어 내용을 먼저 입력하세요', 'text-yellow-400'); return }
-  // 영어 Quill에 동일 내용 복사 (번역 없음 - 사용자가 수정 가능)
-  const qEn = quillInstances['noticeEditorEn']
-  if (qEn) qEn.root.innerHTML = koHtml
-  // 중국어/일본어 textarea에 복사
-  if ($('noticeInputZh')) $('noticeInputZh').value = koText
-  if ($('noticeInputJa')) $('noticeInputJa').value = koText
-  toast('📋 내용이 복사되었습니다 (번역 후 수정하세요)', 'text-blue-400')
+
+  // 스피너 표시
+  const btn = $('btnAutoTranslate'), spinner = $('translateSpinner')
+  if (btn) btn.disabled = true
+  if (spinner) spinner.classList.remove('hidden')
+  toast('🌐 번역 중...', 'text-blue-400')
+
+  try {
+    const data = await api('/api/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text: koText, targets: ['en', 'zh', 'ja'] })
+    })
+
+    if (data.success && data.results) {
+      // 영어 - Quill 에디터에 설정
+      const qEn = quillInstances['noticeEditorEn']
+      if (qEn && data.results.en) qEn.setText(data.results.en)
+      else if (qEn) qEn.root.innerHTML = koHtml  // 번역 실패 시 원문 복사
+
+      // 중국어/일본어 - textarea에 설정
+      if ($('noticeInputZh')) $('noticeInputZh').value = data.results.zh || koText
+      if ($('noticeInputJa')) $('noticeInputJa').value = data.results.ja || koText
+
+      // 번역 결과 패널 표시
+      const preview = $('noticeTranslatePreview')
+      if (preview) preview.classList.remove('hidden')
+
+      // 영어 에디터 초기화 (아직 없으면)
+      if (!quillInstances['noticeEditorEn']) {
+        setTimeout(() => {
+          initQuill('noticeEditorEn', 'English translation...', [['bold','italic'],['link'],['clean']])
+          const qEn2 = quillInstances['noticeEditorEn']
+          if (qEn2 && data.results.en) qEn2.setText(data.results.en)
+        }, 100)
+      }
+
+      toast('✅ 자동번역 완료! 내용을 확인하세요', 'text-green-400')
+    } else {
+      // API 실패 시 원문 복사
+      const qEn = quillInstances['noticeEditorEn']
+      if (qEn) qEn.root.innerHTML = koHtml
+      if ($('noticeInputZh')) $('noticeInputZh').value = koText
+      if ($('noticeInputJa')) $('noticeInputJa').value = koText
+      const preview = $('noticeTranslatePreview')
+      if (preview) preview.classList.remove('hidden')
+      toast('⚠️ 번역 서비스 오류 - 원문이 복사됐습니다', 'text-yellow-400')
+    }
+  } catch(e) {
+    toast('❌ 번역 오류가 발생했습니다', 'text-red-400')
+  } finally {
+    if (btn) btn.disabled = false
+    if (spinner) spinner.classList.add('hidden')
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -1443,14 +1489,31 @@ async function openInquiryDetail(id) {
   const data = await api('/api/inquiry/' + id)
   if (data.error || !data.inquiry) return
   const inq = data.inquiry
-  const modal = $('inqDetailModal'), content = $('inqDetailContent')
-  if (!modal || !content) return
+  const modal = $('inqDetailModal'), contentEl = $('inqDetailContent')
+  if (!modal || !contentEl) return
   const statusLabel = s => t('inq_status_' + s) || s
-  content.innerHTML = `
+
+  // 첨부 파일 메타 파싱
+  const attachMatch = inq.content ? inq.content.match(/<!-- ATTACHMENTS:(.*?) -->/) : null
+  let attachMeta = []
+  let cleanContent = inq.content || ''
+  if (attachMatch) {
+    try { attachMeta = JSON.parse(attachMatch[1]) } catch(_) {}
+    cleanContent = cleanContent.replace(/\n\n<!-- ATTACHMENTS:.*? -->/, '')
+  }
+
+  const attachHtml = attachMeta.length > 0
+    ? `<div class="mt-2"><div class="text-gray-400 text-xs mb-1">📎 첨부 파일</div>
+       <div class="flex flex-wrap gap-1">${attachMeta.map(a =>
+         `<div class="attach-item">${fileIcon(a.type)} <span>${a.name}</span> <span class="text-gray-500">${(a.size/1024).toFixed(0)}KB</span></div>`
+       ).join('')}</div></div>`
+    : ''
+
+  contentEl.innerHTML = `
     <div class="space-y-3 text-sm">
       <div><span class="text-gray-400 text-xs">${t('inquiry_category')}</span><div class="font-bold">${inq.category}</div></div>
       <div><span class="text-gray-400 text-xs">${t('inquiry_title')}</span><div class="font-bold">${inq.title}</div></div>
-      <div><span class="text-gray-400 text-xs">${t('inquiry_content')}</span><div class="bg-black/30 rounded-lg p-3 text-xs text-gray-300 inquiry-content">${inq.content}</div></div>
+      <div><span class="text-gray-400 text-xs">${t('inquiry_content')}</span><div class="bg-black/30 rounded-lg p-3 text-xs text-gray-300 inquiry-content">${cleanContent}</div>${attachHtml}</div>
       ${inq.admin_reply ? `<div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3"><div class="text-blue-400 text-xs font-bold mb-1">💬 관리자 답변</div><div class="text-sm inquiry-content">${inq.admin_reply}</div><div class="text-xs text-gray-500 mt-1">${ago(inq.admin_reply_at)}</div></div>` : ''}
     </div>`
   modal.classList.remove('hidden')
@@ -1469,13 +1532,28 @@ async function submitInquiry() {
   const errEl   = $('inqErr')
   if (errEl) errEl.classList.add('hidden')
   if (!title || !content) { if (errEl) { errEl.textContent = '제목과 내용을 입력하세요'; errEl.classList.remove('hidden') }; return }
-  const data = await api('/api/inquiry/create', { method:'POST', body: JSON.stringify({title, content, category}) })
+
+  // 파일 첨부 처리 (Base64 인코딩)
+  let attachments = []
+  if (inqAttachedFiles.length > 0) {
+    try {
+      toast('⏳ 파일 처리 중...', 'text-blue-400')
+      attachments = await encodeAttachments(inqAttachedFiles)
+    } catch(e) {
+      toast('⚠️ 파일 처리 오류, 첨부 없이 제출합니다', 'text-yellow-400')
+    }
+  }
+
+  const data = await api('/api/inquiry/create', { method:'POST', body: JSON.stringify({title, content, category, attachments}) })
   if (data.error) {
     if (errEl) { errEl.textContent = errMap(data.error); errEl.classList.remove('hidden') }; return
   }
   if ($('inqTitle')) $('inqTitle').value = ''
   clearQuill('inqEditor')
   if ($('inqCharCount')) $('inqCharCount').textContent = '0'
+  // 첨부 파일 초기화
+  inqAttachedFiles.length = 0
+  renderInqAttachPreview()
   toast('✅ 문의가 접수되었습니다', 'text-green-400')
   loadMyInquiries()
 }
@@ -1656,6 +1734,73 @@ function parseRef() {
     showTab('register')
     toast('🤝 파트너 링크로 접속 (코드: ' + partner + ')', 'text-blue-400')
   }
+}
+
+// ═══════════════════════════════════════════════
+// 파일 첨부 기능 (1:1 문의)
+// ═══════════════════════════════════════════════
+const inqAttachedFiles = []  // 첨부 파일 목록
+const MAX_FILES = 3
+const MAX_SIZE = 5 * 1024 * 1024  // 5MB
+
+function handleInqDrop(event) {
+  event.preventDefault()
+  const zone = $('inqDropZone')
+  if (zone) zone.classList.remove('drag-over')
+  handleInqFiles(event.dataTransfer.files)
+}
+
+function handleInqFiles(files) {
+  if (!files || files.length === 0) return
+  const allowed = ['image/jpeg','image/png','image/gif','image/webp','application/pdf','text/plain',
+    'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+  let added = 0
+  for (const file of files) {
+    if (inqAttachedFiles.length >= MAX_FILES) { toast(`❌ 최대 ${MAX_FILES}개까지 첨부 가능합니다`, 'text-red-400'); break }
+    if (file.size > MAX_SIZE) { toast(`❌ ${file.name}: 5MB 초과`, 'text-red-400'); continue }
+    if (!allowed.includes(file.type)) { toast(`❌ ${file.name}: 지원하지 않는 형식`, 'text-red-400'); continue }
+    inqAttachedFiles.push(file)
+    added++
+  }
+  if (added > 0) renderInqAttachPreview()
+}
+
+function renderInqAttachPreview() {
+  const el = $('inqAttachPreview')
+  if (!el) return
+  el.innerHTML = inqAttachedFiles.map((f, i) => `
+    <div class="attach-item">
+      <span>${fileIcon(f.type)}</span>
+      <span class="truncate max-w-[120px]">${f.name}</span>
+      <span class="text-gray-500">${(f.size/1024).toFixed(0)}KB</span>
+      <button onclick="removeInqFile(${i})" title="삭제">✕</button>
+    </div>`).join('')
+}
+
+function removeInqFile(idx) {
+  inqAttachedFiles.splice(idx, 1)
+  renderInqAttachPreview()
+}
+
+function fileIcon(type) {
+  if (type.startsWith('image/')) return '🖼️'
+  if (type === 'application/pdf') return '📄'
+  if (type.includes('word')) return '📝'
+  return '📎'
+}
+
+// 파일을 Base64로 인코딩하여 첨부 정보 생성
+async function encodeAttachments(files) {
+  const result = []
+  for (const file of files) {
+    const b64 = await new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onload = e => resolve(e.target.result.split(',')[1])
+      reader.readAsDataURL(file)
+    })
+    result.push({ name: file.name, type: file.type, size: file.size, data: b64 })
+  }
+  return result
 }
 
 // ═══════════════════════════════════════════════
