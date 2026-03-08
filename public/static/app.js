@@ -81,6 +81,20 @@ const I18N = {
     pw_mismatch:'새 비밀번호가 일치하지 않습니다',
     notice_placeholder:'공지 내용 입력...',notice_post:'등록',notice_empty:'공지 없음',
     notice_delete:'삭제',
+    tab_faq:'❓ FAQ',tab_support:'💬 문의',
+    faq_desc:'자주 묻는 질문과 답변',faq_no_answer:'원하는 답변이 없으신가요?',
+    faq_contact:'1:1 문의하기',
+    faq_cat_general:'일반',faq_cat_deposit:'입금',faq_cat_withdraw:'출금',
+    faq_cat_bet:'게임',faq_cat_referral:'추천',faq_cat_partner:'파트너',
+    support_desc:'궁금한 점을 문의하시면 빠르게 답변드립니다',
+    new_inquiry:'새 문의 작성',inquiry_category:'카테고리',
+    inquiry_title:'제목',inquiry_content:'내용',inquiry_submit:'문의 제출',
+    my_inquiries:'내 문의 내역',inquiry_detail:'문의 상세',
+    inq_status_pending:'답변 대기',inq_status_answered:'답변 완료',inq_status_closed:'처리 완료',
+    err_locked:'계정이 잠겼습니다. 잠시 후 다시 시도하세요.',
+    err_title_too_long:'제목이 너무 깁니다 (최대 100자)',
+    err_content_too_long:'내용이 너무 깁니다 (최대 2000자)',
+    partner_code_label:'파트너코드',partner_desc:'파트너 링크로 가입 시 자동 적용됩니다',
   },
   en: {
     blockchain_fair:'Blockchain Fair',login:'Login',register:'Register',logout:'Logout',
@@ -161,6 +175,20 @@ const I18N = {
     pw_mismatch:'New passwords do not match',
     notice_placeholder:'Enter notice content...',notice_post:'Post',notice_empty:'No notices',
     notice_delete:'Delete',
+    tab_faq:'❓ FAQ',tab_support:'💬 Support',
+    faq_desc:'Frequently Asked Questions',faq_no_answer:'Can\'t find an answer?',
+    faq_contact:'Contact Support',
+    faq_cat_general:'General',faq_cat_deposit:'Deposit',faq_cat_withdraw:'Withdraw',
+    faq_cat_bet:'Game',faq_cat_referral:'Referral',faq_cat_partner:'Partner',
+    support_desc:'Ask us anything, we\'ll reply quickly',
+    new_inquiry:'New Inquiry',inquiry_category:'Category',
+    inquiry_title:'Title',inquiry_content:'Content',inquiry_submit:'Submit',
+    my_inquiries:'My Inquiries',inquiry_detail:'Inquiry Detail',
+    inq_status_pending:'Pending',inq_status_answered:'Answered',inq_status_closed:'Closed',
+    err_locked:'Account locked. Please try again later.',
+    err_title_too_long:'Title too long (max 100 chars)',
+    err_content_too_long:'Content too long (max 2000 chars)',
+    partner_code_label:'Partner Code',partner_desc:'Automatically applied when registering via partner link',
   },
   zh: {
     blockchain_fair:'区块链公平',login:'登录',register:'注册',logout:'退出',
@@ -241,6 +269,20 @@ const I18N = {
     pw_mismatch:'两次输入的密码不一致',
     notice_placeholder:'输入公告内容...',notice_post:'发布',notice_empty:'暂无公告',
     notice_delete:'删除',
+    tab_faq:'❓ FAQ',tab_support:'💬 客服',
+    faq_desc:'常见问题解答',faq_no_answer:'没有找到答案?',
+    faq_contact:'联系客服',
+    faq_cat_general:'一般',faq_cat_deposit:'充值',faq_cat_withdraw:'提现',
+    faq_cat_bet:'游戏',faq_cat_referral:'推荐',faq_cat_partner:'合作',
+    support_desc:'有任何问题请联系我们，我们将尽快回复',
+    new_inquiry:'新建咨询',inquiry_category:'类别',
+    inquiry_title:'标题',inquiry_content:'内容',inquiry_submit:'提交',
+    my_inquiries:'我的咨询',inquiry_detail:'咨询详情',
+    inq_status_pending:'待回复',inq_status_answered:'已回复',inq_status_closed:'已关闭',
+    err_locked:'账户已锁定，请稍后再试。',
+    err_title_too_long:'标题过长（最多100字）',
+    err_content_too_long:'内容过长（最多2000字）',
+    partner_code_label:'合作码',partner_desc:'通过合作链接注册时自动应用',
   },
   ja: {
     blockchain_fair:'ブロックチェーン公正',login:'ログイン',register:'登録',logout:'ログアウト',
@@ -321,6 +363,20 @@ const I18N = {
     pw_mismatch:'新しいパスワードが一致しません',
     notice_placeholder:'お知らせ内容を入力...',notice_post:'投稿',notice_empty:'お知らせなし',
     notice_delete:'削除',
+    tab_faq:'❓ FAQ',tab_support:'💬 お問い合わせ',
+    faq_desc:'よくある質問と回答',faq_no_answer:'お探しの回答が見つかりませんか?',
+    faq_contact:'1:1お問い合わせ',
+    faq_cat_general:'一般',faq_cat_deposit:'入金',faq_cat_withdraw:'出金',
+    faq_cat_bet:'ゲーム',faq_cat_referral:'紹介',faq_cat_partner:'パートナー',
+    support_desc:'ご不明な点はお気軽にお問い合わせください',
+    new_inquiry:'新規お問い合わせ',inquiry_category:'カテゴリ',
+    inquiry_title:'タイトル',inquiry_content:'内容',inquiry_submit:'送信',
+    my_inquiries:'お問い合わせ履歴',inquiry_detail:'お問い合わせ詳細',
+    inq_status_pending:'未回答',inq_status_answered:'回答済み',inq_status_closed:'クローズ',
+    err_locked:'アカウントがロックされています。しばらくしてからお試しください。',
+    err_title_too_long:'タイトルが長すぎます（最大100文字）',
+    err_content_too_long:'内容が長すぎます（最大2000文字）',
+    partner_code_label:'パートナーコード',partner_desc:'パートナーリンクで登録時に自動適用されます',
   }
 }
 
@@ -342,7 +398,7 @@ function applyLang() {
     if (isBetting !== undefined) pb.textContent = isBetting ? t('phase_betting') : t('phase_result')
   }
 }
-function setLang(l) { lang = l; localStorage.setItem('lang', l); applyLang() }
+function setLang(l) { lang = l; localStorage.setItem('lang', l); applyLang(); loadNotices() }
 
 // ═══════════════════════════════════════════════
 // 전역 상태
@@ -386,7 +442,8 @@ const errMap = code => {
     INVALID_REF:'err_invalid_ref', IP_LIMIT:'err_ip_limit',
     MIN_WITHDRAW:'err_min_withdraw', INVALID_ADDR:'err_invalid_addr',
     BET_REQUIREMENT:'err_bet_requirement', WITHDRAW_PENDING:'err_withdraw_pending',
-    MAX_BET:'err_max_bet'
+    MAX_BET:'err_max_bet', LOCKED:'err_locked',
+    TITLE_TOO_LONG:'err_title_too_long', CONTENT_TOO_LONG:'err_content_too_long',
   }
   return t(m[code] || 'err_unauth')
 }
@@ -395,7 +452,7 @@ const errMap = code => {
 // 탭 네비게이션
 // ═══════════════════════════════════════════════
 function showTab(name) {
-  const tabs = ['game','mypage','wallet','dashboard','referral','verify','login','register','admin']
+  const tabs = ['game','mypage','wallet','dashboard','referral','verify','faq','support','login','register','admin']
   tabs.forEach(t => {
     const p = $('p-' + t), btn = $('t-' + t)
     if (p) p.classList.toggle('hidden', t !== name)
@@ -407,6 +464,8 @@ function showTab(name) {
   if (name === 'wallet')    loadWallet()
   if (name === 'mypage')    loadMypage()
   if (name === 'admin')     loadAdmin()
+  if (name === 'faq')       loadFAQ('')
+  if (name === 'support')   loadSupport()
 }
 
 function updateUI() {
@@ -416,7 +475,7 @@ function updateUI() {
   $('hdrUser').classList.toggle('flex', loggedIn)
   const loginTabs = ['login','register']
   loginTabs.forEach(t => { const b = $('t-'+t); if (b) b.classList.toggle('hidden', loggedIn) })
-  const userTabs = ['mypage','wallet']
+  const userTabs = ['mypage','wallet','support']
   userTabs.forEach(t => { const b = $('t-'+t); if (b) b.classList.toggle('hidden', !loggedIn) })
   const adminTab = $('t-admin')
   if (adminTab) adminTab.classList.toggle('hidden', !(me && me.isAdmin))
@@ -446,7 +505,11 @@ async function doLogin() {
   const password = $('lPass').value
   $('lErr').classList.add('hidden')
   const data = await api('/api/login', { method:'POST', body: JSON.stringify({username, password}) })
-  if (data.error) { $('lErr').textContent = errMap(data.error); $('lErr').classList.remove('hidden'); return }
+  if (data.error) {
+    let msg = errMap(data.error)
+    if (data.error === 'LOCKED' && data.remainMin) msg = `잠금 효 ${data.remainMin}분 뒤 재시도하세요`
+    $('lErr').textContent = msg; $('lErr').classList.remove('hidden'); return
+  }
   sid = data.sessionId
   me  = data.user
   localStorage.setItem('sid', sid)
@@ -456,11 +519,12 @@ async function doLogin() {
 }
 
 async function doRegister() {
-  const username = $('rUser').value.trim()
-  const password = $('rPass').value
+  const username     = $('rUser').value.trim()
+  const password     = $('rPass').value
   const referralCode = $('rRef').value.trim()
+  const partnerCode  = new URLSearchParams(location.search).get('partner') || ''
   $('rErr').classList.add('hidden'); $('rOk').classList.add('hidden')
-  const data = await api('/api/register', { method:'POST', body: JSON.stringify({username, password, referralCode}) })
+  const data = await api('/api/register', { method:'POST', body: JSON.stringify({username, password, referralCode, partnerCode}) })
   if (data.error) { $('rErr').textContent = errMap(data.error); $('rErr').classList.remove('hidden'); return }
   sid = data.sessionId; me = data.user
   localStorage.setItem('sid', sid)
@@ -716,7 +780,7 @@ function copyAddr() {
 }
 
 function setMaxWd() {
-  if (me) $('wdAmt').value = Math.max(0, me.balance).toFixed(2)
+  if (me) $('wdAmt').value = Math.max(0, me.balance - 1).toFixed(2)  // 수수료 1 USDT 자동 차감
 }
 
 async function demoDeposit() {
@@ -980,6 +1044,9 @@ async function loadAdmin() {
   loadAdminWithdraws()
   loadAdminUsers()
   loadAdminNotices()
+  loadAdminPartners()
+  loadAdminInquiries('')
+  loadAdminFAQs()
 }
 
 async function loadAdminWithdraws() {
@@ -1095,7 +1162,7 @@ async function adminBan(userId, ban) {
 // 공지사항
 // ═══════════════════════════════════════════════
 async function loadNotices() {
-  const data = await api('/api/notices')
+  const data = await api('/api/notices?lang=' + (localStorage.getItem('lang') || 'ko'))
   const banner = $('noticeBanner')
   const list   = $('noticeList')
   if (!banner || !list) return
@@ -1106,7 +1173,7 @@ async function loadNotices() {
   list.innerHTML = data.notices.map(n => {
     const cls = colorMap[n.type] || colorMap.info
     return `<div class="border-b border-white/5 last:border-0 px-4 py-2 flex items-center justify-between gap-2 ${cls}">
-      <span class="text-xs font-bold">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'} ${n.content}</span>
+      <span class="text-xs font-bold">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'} ${n.displayContent || n.content}</span>
       <span class="text-xs opacity-60 shrink-0">${ago(n.created_at)}</span>
     </div>`
   }).join('')
@@ -1133,12 +1200,15 @@ async function loadAdminNotices() {
 }
 
 async function postNotice() {
-  const content = $('noticeInput')?.value.trim()
-  const type    = $('noticeType')?.value || 'info'
+  const content    = $('noticeInput')?.value.trim()
+  const content_en = $('noticeInputEn')?.value.trim()
+  const content_zh = $('noticeInputZh')?.value.trim()
+  const content_ja = $('noticeInputJa')?.value.trim()
+  const type       = $('noticeType')?.value || 'info'
   if (!content) return
-  const data = await api('/api/admin/notice', { method:'POST', body: JSON.stringify({content, type}) })
+  const data = await api('/api/admin/notice', { method:'POST', body: JSON.stringify({content, content_en, content_zh, content_ja, type}) })
   if (data.success) {
-    if ($('noticeInput')) $('noticeInput').value = ''
+    [$('noticeInput'), $('noticeInputEn'), $('noticeInputZh'), $('noticeInputJa')].forEach(el => { if (el) el.value = '' })
     toast('📢 공지 등록 완료', 'text-green-400')
     loadAdminNotices()
     loadNotices()
@@ -1151,15 +1221,320 @@ async function deleteNotice(noticeId) {
 }
 
 // ═══════════════════════════════════════════════
-// URL 추천 파라미터
+// 관리자 통계 추가 기능 (loadAdmin 확장)
+// ═══════════════════════════════════════════════
+async function adminResetPw() {
+  const userId = $('adBalUserId')?.value
+  const uname  = $('adBalUser')?.textContent
+  const newPw  = prompt(`${uname} 의 새 비밀번호 입력 (6자 이상):`)
+  if (!newPw || newPw.length < 6) { toast('❌ 비밀번호는 6자 이상', 'text-red-400'); return }
+  const data = await api('/api/admin/user/reset-password', { method:'POST', body: JSON.stringify({userId, newPassword: newPw}) })
+  if (data.success) { toast('🔑 비밀번호 초기화 완료', 'text-green-400'); document.getElementById('adBalModal').classList.add('hidden') }
+  else toast('❌ ' + (data.error||'오류'), 'text-red-400')
+}
+
+// ═══════════════════════════════════════════════
+// 파트너 관리
+// ═══════════════════════════════════════════════
+async function loadAdminPartners() {
+  const data = await api('/api/admin/partners')
+  const el = $('adPartnerList')
+  if (!el) return
+  if (!data.partners || data.partners.length === 0) {
+    el.innerHTML = '<div class="text-gray-500 text-center py-2">파트너 없음</div>'
+    return
+  }
+  const origin = location.origin
+  el.innerHTML = data.partners.map(p => `
+    <div class="p-3 bg-black/20 rounded-xl border border-white/10 text-xs">
+      <div class="flex items-center justify-between gap-2 mb-1.5">
+        <div>
+          <span class="font-black text-yellow-400 text-sm">${p.name}</span>
+          <span class="ml-2 text-gray-400">(${p.owner_username})</span>
+          <span class="ml-1 px-1.5 py-0.5 rounded ${p.is_active ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'} text-xs">${p.is_active ? '활성' : '비활성'}</span>
+        </div>
+        <div class="flex gap-1">
+          <button onclick="togglePartner('${p.code}',${p.is_active?0:1})" class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs transition">${p.is_active?'비활성화':'활성화'}</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-2 mb-1.5 text-center">
+        <div class="bg-black/20 rounded p-1.5"><div class="text-gray-400 text-xs">수수료율</div><div class="font-black text-blue-400">${(p.commission_rate*100).toFixed(1)}%</div></div>
+        <div class="bg-black/20 rounded p-1.5"><div class="text-gray-400 text-xs">가입 유저</div><div class="font-black text-green-400">${p.user_count}</div></div>
+        <div class="bg-black/20 rounded p-1.5"><div class="text-gray-400 text-xs">누적 수당</div><div class="font-black text-yellow-400">${fmtU(p.total_earned)} USDT</div></div>
+      </div>
+      <div class="bg-black/20 rounded p-2">
+        <div class="text-gray-500 mb-0.5">파트너 링크:</div>
+        <div class="text-blue-400 break-all mono text-xs">${origin}?partner=${p.code}</div>
+        <button onclick="copyText('${origin}?partner=${p.code}')" class="mt-1 px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded text-xs hover:bg-blue-600/30 transition">📋 링크 복사</button>
+      </div>
+    </div>`).join('')
+}
+
+async function createPartner() {
+  const name  = $('pName')?.value.trim()
+  const owner = $('pOwner')?.value.trim()
+  const rate  = parseFloat($('pRate')?.value) / 100 || 0.05
+  if (!name || !owner) { toast('❌ 파트너명과 운영자 아이디를 입력하세요', 'text-red-400'); return }
+  const data = await api('/api/admin/partner/create', { method:'POST', body: JSON.stringify({name, owner_username: owner, commission_rate: rate}) })
+  if (data.success) {
+    toast(`✅ 파트너 생성 완료! 코드: ${data.code}`, 'text-green-400')
+    if ($('pName')) $('pName').value = ''
+    if ($('pOwner')) $('pOwner').value = ''
+    loadAdminPartners()
+  } else toast('❌ ' + (data.error||'오류'), 'text-red-400')
+}
+
+async function togglePartner(code, isActive) {
+  await api('/api/admin/partner/update', { method:'POST', body: JSON.stringify({code, is_active: isActive}) })
+  loadAdminPartners()
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => toast('📋 ' + t('copied'), 'text-blue-400'))
+}
+
+// ═══════════════════════════════════════════════
+// 1:1 문의 - 유저
+// ═══════════════════════════════════════════════
+async function loadSupport() {
+  const needLogin = $('supportNeedLogin'), info = $('supportInfo')
+  if (!needLogin || !info) return
+  if (!me) { needLogin.classList.remove('hidden'); info.classList.add('hidden'); return }
+  needLogin.classList.add('hidden'); info.classList.remove('hidden')
+  // 글자 수 카운터
+  const ta = $('inqContent')
+  if (ta) ta.oninput = () => { if ($('inqCharCount')) $('inqCharCount').textContent = ta.value.length }
+  await loadMyInquiries()
+}
+
+async function loadMyInquiries() {
+  const data = await api('/api/inquiries')
+  const el = $('myInquiryList')
+  if (!el) return
+  if (!data.inquiries || data.inquiries.length === 0) {
+    el.innerHTML = `<div class="text-xs text-gray-500 text-center py-3">${t('no_record')}</div>`; return
+  }
+  const statusCls = { pending:'text-yellow-400', answered:'text-green-400', closed:'text-gray-400' }
+  const statusLabel = s => t('inq_status_' + s) || s
+  el.innerHTML = data.inquiries.map(inq => `
+    <div class="p-3 bg-black/20 rounded-xl border border-white/10 cursor-pointer hover:border-blue-500/40 transition" onclick="openInquiryDetail('${inq.id}')">
+      <div class="flex items-center justify-between gap-2">
+        <div class="font-bold text-sm text-white">${inq.title}</div>
+        <span class="text-xs shrink-0 ${statusCls[inq.status] || 'text-gray-400'}">${statusLabel(inq.status)}</span>
+      </div>
+      <div class="flex justify-between mt-1 text-xs text-gray-500">
+        <span>${inq.category}</span>
+        <span>${ago(inq.created_at)}</span>
+      </div>
+      ${inq.admin_reply ? `<div class="mt-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300">💬 ${inq.admin_reply}</div>` : ''}
+    </div>`).join('')
+}
+
+async function openInquiryDetail(id) {
+  const data = await api('/api/inquiry/' + id)
+  if (data.error || !data.inquiry) return
+  const inq = data.inquiry
+  const modal = $('inqDetailModal'), content = $('inqDetailContent')
+  if (!modal || !content) return
+  const statusLabel = s => t('inq_status_' + s) || s
+  content.innerHTML = `
+    <div class="space-y-3 text-sm">
+      <div><span class="text-gray-400 text-xs">${t('inquiry_category')}</span><div class="font-bold">${inq.category}</div></div>
+      <div><span class="text-gray-400 text-xs">${t('inquiry_title')}</span><div class="font-bold">${inq.title}</div></div>
+      <div><span class="text-gray-400 text-xs">${t('inquiry_content')}</span><div class="bg-black/30 rounded-lg p-3 text-xs text-gray-300 whitespace-pre-wrap">${inq.content}</div></div>
+      ${inq.admin_reply ? `<div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3"><div class="text-blue-400 text-xs font-bold mb-1">💬 관리자 답변</div><div class="text-sm whitespace-pre-wrap">${inq.admin_reply}</div><div class="text-xs text-gray-500 mt-1">${ago(inq.admin_reply_at)}</div></div>` : ''}
+    </div>`
+  modal.classList.remove('hidden')
+}
+
+function closeInquiryDetail() {
+  const modal = $('inqDetailModal')
+  if (modal) modal.classList.add('hidden')
+}
+
+async function submitInquiry() {
+  const title   = $('inqTitle')?.value.trim()
+  const content = $('inqContent')?.value.trim()
+  const category = $('inqCat')?.value || 'general'
+  const errEl   = $('inqErr')
+  if (errEl) errEl.classList.add('hidden')
+  if (!title || !content) { if (errEl) { errEl.textContent = '제목과 내용을 입력하세요'; errEl.classList.remove('hidden') }; return }
+  const data = await api('/api/inquiry/create', { method:'POST', body: JSON.stringify({title, content, category}) })
+  if (data.error) {
+    if (errEl) { errEl.textContent = errMap(data.error); errEl.classList.remove('hidden') }; return
+  }
+  if ($('inqTitle')) $('inqTitle').value = ''
+  if ($('inqContent')) $('inqContent').value = ''
+  if ($('inqCharCount')) $('inqCharCount').textContent = '0'
+  toast('✅ 문의가 접수되었습니다', 'text-green-400')
+  loadMyInquiries()
+}
+
+// ═══════════════════════════════════════════════
+// 1:1 문의 - 관리자
+// ═══════════════════════════════════════════════
+async function loadAdminInquiries(status) {
+  const data = await api('/api/admin/inquiries' + (status ? '?status=' + status : ''))
+  const el = $('adInquiryList'), badge = $('adInquiryBadge')
+  if (!el) return
+  if (badge && data.pendingCount > 0) { badge.textContent = data.pendingCount; badge.classList.remove('hidden') }
+  else if (badge) badge.classList.add('hidden')
+  if (!data.inquiries || data.inquiries.length === 0) {
+    el.innerHTML = '<div class="text-xs text-gray-500 text-center py-3">문의 없음</div>'; return
+  }
+  const statusCls = { pending:'text-orange-400', answered:'text-green-400', closed:'text-gray-400' }
+  el.innerHTML = data.inquiries.map(inq => `
+    <div class="p-3 bg-black/20 rounded-xl border border-white/10 text-xs">
+      <div class="flex items-center justify-between gap-1 mb-1">
+        <div><span class="font-bold text-white">${inq.username}</span> <span class="text-gray-500">${inq.category}</span></div>
+        <span class="${statusCls[inq.status]||'text-gray-400'} shrink-0">${inq.status}</span>
+      </div>
+      <div class="font-bold text-sm mb-1">${inq.title}</div>
+      <div class="text-gray-400 mb-2">${ago(inq.created_at)}</div>
+      ${inq.admin_reply ? `<div class="bg-blue-500/10 p-2 rounded text-blue-300 mb-2">💬 ${inq.admin_reply}</div>` : ''}
+      <div class="flex gap-1">
+        <button onclick="openAdminReply('${inq.id}','${inq.title.replace(/'/g,'')}')" class="px-2 py-1 bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600/30 transition">✏️ 답변</button>
+        <button onclick="closeInquiry('${inq.id}')" class="px-2 py-1 bg-white/10 text-gray-400 rounded hover:bg-white/20 transition">✓ 종료</button>
+      </div>
+    </div>`).join('')
+}
+
+function openAdminReply(id, title) {
+  if ($('adReplyModal')) $('adReplyModal').classList.remove('hidden')
+  if ($('adReplyInqId')) $('adReplyInqId').value = id
+  if ($('adReplyTitle')) $('adReplyTitle').textContent = title
+  if ($('adReplyText')) $('adReplyText').value = ''
+}
+
+function closeAdminReply() {
+  if ($('adReplyModal')) $('adReplyModal').classList.add('hidden')
+}
+
+async function submitAdminReply() {
+  const inquiryId = $('adReplyInqId')?.value
+  const reply     = $('adReplyText')?.value.trim()
+  if (!reply) { toast('❌ 답변 내용을 입력하세요', 'text-red-400'); return }
+  const data = await api('/api/admin/inquiry/reply', { method:'POST', body: JSON.stringify({inquiryId, reply}) })
+  if (data.success) { toast('✅ 답변 등록 완료', 'text-green-400'); closeAdminReply(); loadAdminInquiries('') }
+  else toast('❌ ' + (data.error||'오류'), 'text-red-400')
+}
+
+async function closeInquiry(id) {
+  await api('/api/admin/inquiry/close', { method:'POST', body: JSON.stringify({inquiryId: id}) })
+  toast('✓ 문의 종료 처리', 'text-gray-400')
+  loadAdminInquiries('')
+}
+
+// ═══════════════════════════════════════════════
+// FAQ
+// ═══════════════════════════════════════════════
+let faqCurrentCat = ''
+
+async function loadFAQ(category) {
+  faqCurrentCat = category
+  // 카테고리 버튼 활성화
+  document.querySelectorAll('.faq-cat-btn').forEach(btn => {
+    const isCurrent = btn.dataset.cat === category
+    btn.className = 'faq-cat-btn ' + (isCurrent
+      ? 'active px-3 py-1.5 rounded-full text-xs font-bold transition bg-blue-500/30 text-blue-300 border border-blue-500/40'
+      : 'px-3 py-1.5 rounded-full text-xs font-bold transition bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20')
+    btn.dataset.cat = btn.dataset.cat
+  })
+  const lang = localStorage.getItem('lang') || 'ko'
+  const data = await api('/api/faqs?lang=' + lang + (category ? '&category=' + category : ''))
+  const el = $('faqList')
+  if (!el) return
+  // 문의 버튼 표시 처리
+  const faqToSupport = $('faqToSupport'), faqToLogin = $('faqToLogin')
+  if (faqToSupport) faqToSupport.classList.toggle('hidden', !me)
+  if (faqToLogin)   faqToLogin.classList.toggle('hidden', !!me)
+  if (!data.faqs || data.faqs.length === 0) {
+    el.innerHTML = `<div class="text-center text-gray-500 py-10 text-sm">${t('no_record')}</div>`; return
+  }
+  el.innerHTML = data.faqs.map((faq, i) => `
+    <div class="glass rounded-xl overflow-hidden">
+      <button onclick="toggleFaq(${i})" class="w-full px-5 py-4 text-left flex items-center justify-between gap-3 hover:bg-white/5 transition">
+        <div class="flex items-center gap-2">
+          <span class="text-blue-400 text-sm font-black shrink-0">Q</span>
+          <span class="font-bold text-sm">${faq.question}</span>
+        </div>
+        <span id="faqIcon${i}" class="text-gray-400 shrink-0 transition-transform">▼</span>
+      </button>
+      <div id="faqAns${i}" class="hidden px-5 pb-4">
+        <div class="flex gap-2">
+          <span class="text-green-400 font-black shrink-0">A</span>
+          <div class="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">${faq.answer}</div>
+        </div>
+      </div>
+    </div>`).join('')
+}
+
+function toggleFaq(i) {
+  const ans = $('faqAns' + i), icon = $('faqIcon' + i)
+  if (!ans) return
+  const hidden = ans.classList.toggle('hidden')
+  if (icon) icon.textContent = hidden ? '▼' : '▲'
+}
+
+// ═══════════════════════════════════════════════
+// FAQ 관리자
+// ═══════════════════════════════════════════════
+async function loadAdminFAQs() {
+  const data = await api('/api/faqs?lang=ko')
+  const el = $('adFaqList')
+  if (!el) return
+  if (!data.faqs || data.faqs.length === 0) {
+    el.innerHTML = '<div class="text-gray-500 text-center py-2">FAQ 없음</div>'; return
+  }
+  el.innerHTML = data.faqs.map(f => `
+    <div class="flex items-start justify-between gap-2 p-2 bg-black/20 rounded-lg">
+      <div class="flex-1 min-w-0">
+        <div class="text-xs font-bold text-white truncate">[${f.category}] ${f.question}</div>
+        <div class="text-xs text-gray-400 truncate">${f.answer}</div>
+      </div>
+      <button onclick="deleteFAQ('${f.id}')" class="shrink-0 px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition">삭제</button>
+    </div>`).join('')
+}
+
+async function createFAQ() {
+  const category   = $('faqAdCat')?.value || 'general'
+  const question   = $('faqAdQ')?.value.trim()
+  const answer     = $('faqAdA')?.value.trim()
+  const question_en = $('faqAdQen')?.value.trim()
+  const answer_en   = $('faqAdAen')?.value.trim()
+  const sort_order  = parseInt($('faqAdOrder')?.value || '0')
+  if (!question || !answer) { toast('❌ 질문과 답변을 입력하세요', 'text-red-400'); return }
+  const data = await api('/api/admin/faq/create', { method:'POST', body: JSON.stringify({category, question, answer, question_en, answer_en, sort_order}) })
+  if (data.success) {
+    toast('✅ FAQ 등록 완료', 'text-green-400')
+    [$('faqAdQ'), $('faqAdA'), $('faqAdQen'), $('faqAdAen')].forEach(el => { if (el) el.value = '' })
+    loadAdminFAQs()
+  } else toast('❌ ' + (data.error||'오류'), 'text-red-400')
+}
+
+async function deleteFAQ(id) {
+  if (!confirm('이 FAQ를 삭제하시겠습니까?')) return
+  const data = await api('/api/admin/faq/delete', { method:'POST', body: JSON.stringify({id}) })
+  if (data.success) { toast('🗑️ FAQ 삭제', 'text-yellow-400'); loadAdminFAQs() }
+}
+
+// ═══════════════════════════════════════════════
+// URL 추천/파트너 파라미터
 // ═══════════════════════════════════════════════
 function parseRef() {
-  const ref = new URLSearchParams(location.search).get('ref')
+  const params  = new URLSearchParams(location.search)
+  const ref     = params.get('ref')
+  const partner = params.get('partner')
   if (ref) {
     const el = $('rRef')
     if (el) el.value = ref
     showTab('register')
     toast('🎁 추천코드: ' + ref, 'text-yellow-400')
+  }
+  if (partner) {
+    // 파트너 코드는 회원가입 시 자동으로 URL에서 읽어 적용됨
+    showTab('register')
+    toast('🤝 파트너 링크로 접속 (코드: ' + partner + ')', 'text-blue-400')
   }
 }
 

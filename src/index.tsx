@@ -17,6 +17,7 @@ app.use('/static/*', serveStatic({ root: './' }))
 const PAYOUT           = 1.90
 const L1               = 0.025
 const L2               = 0.010
+const PARTNER_RATE     = 0.065   // 파트너 기본 수수료율 (하우스 수익의 일부)
 const MIN_WITHDRAW_AMT = 1
 const WITHDRAW_FEE     = 1        // TRC20 네트워크 수수료
 const MIN_BET          = 0.1
@@ -26,6 +27,8 @@ const RESULT_SHOW      = 8000    // ms
 const CYCLE            = ROUND_DURATION + RESULT_SHOW
 const GAME_START       = 1700000000000  // 고정 기준시간 (서버 재시작 무관)
 const SESSION_TTL      = 7 * 24 * 60 * 60 * 1000  // 7일 (ms)
+const LOGIN_MAX_FAIL   = 5       // 최대 로그인 실패 횟수
+const LOGIN_LOCK_MS    = 15 * 60 * 1000  // 잠금 시간 15분
 
 // ─────────────────────────────────────────────
 // 유틸
@@ -158,7 +161,7 @@ async function settleRound(db: D1Database, round: any) {
     )
 
     // 추천수당 지급
-    const betUser = await db.prepare('SELECT referred_by FROM users WHERE id=?').bind(bet.user_id).first<any>()
+    const betUser = await db.prepare('SELECT referred_by, partner_code FROM users WHERE id=?').bind(bet.user_id).first<any>()
     if (betUser?.referred_by) {
       const r1 = r2(bet.amount * L1)
       stmts.push(
@@ -171,6 +174,21 @@ async function settleRound(db: D1Database, round: any) {
         stmts.push(
           db.prepare('UPDATE users SET balance=balance+?, referral_earnings=referral_earnings+? WHERE id=?')
             .bind(r2amt, r2amt, l1User.referred_by)
+        )
+      }
+    }
+    // 파트너 수당 지급 (베팅한 유저의 파트너 코드 기준)
+    if (betUser?.partner_code) {
+      const partner = await db.prepare('SELECT * FROM partners WHERE code=? AND is_active=1').bind(betUser.partner_code).first<any>()
+      if (partner) {
+        const commission = r2(bet.amount * (partner.commission_rate || PARTNER_RATE))
+        stmts.push(
+          db.prepare('UPDATE partners SET total_earned=total_earned+?, total_bet_via=total_bet_via+? WHERE code=?')
+            .bind(commission, bet.amount, betUser.partner_code)
+        )
+        stmts.push(
+          db.prepare('INSERT INTO partner_earning_logs (id, partner_code, user_id, bet_amount, commission_amount, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(uid(), betUser.partner_code, bet.user_id, bet.amount, commission, Date.now())
         )
       }
     }
@@ -238,7 +256,7 @@ app.post('/api/init-demo', async (c) => {
 // API: 인증
 // ─────────────────────────────────────────────
 app.post('/api/register', async (c) => {
-  const { username, password, referralCode } = await c.req.json()
+  const { username, password, referralCode, partnerCode } = await c.req.json()
   if (!username || !password)     return c.json({ error:'NEED_FIELDS' }, 400)
   if (username.length < 3)        return c.json({ error:'USERNAME_SHORT' }, 400)
   if (password.length < 6)        return c.json({ error:'PASSWORD_SHORT' }, 400)
@@ -258,6 +276,17 @@ app.post('/api/register', async (c) => {
     referredBy = refUser.id
   }
 
+  // 파트너 코드 검증
+  let validPartnerCode: string = ''
+  if (partnerCode) {
+    const partner = await c.env.DB.prepare('SELECT code FROM partners WHERE code=? AND is_active=1').bind(partnerCode).first<any>()
+    if (partner) {
+      validPartnerCode = partnerCode
+      // 파트너 유저 수 증가
+      await c.env.DB.prepare('UPDATE partners SET user_count=user_count+1 WHERE code=?').bind(partnerCode).run()
+    }
+  }
+
   const id           = uid()
   const passwordHash = await hashPassword(password)
   const newRcode     = rcode()
@@ -265,9 +294,9 @@ app.post('/api/register', async (c) => {
 
   await c.env.DB.prepare(`
     INSERT INTO users (id, username, password_hash, balance, deposit_address, total_deposit,
-      referral_code, referred_by, is_admin, created_at, last_ip)
-    VALUES (?, ?, ?, 10, ?, 10, ?, ?, 0, ?, ?)
-  `).bind(id, username, passwordHash, genAddr(), newRcode, referredBy, now, ip).run()
+      referral_code, referred_by, is_admin, created_at, last_ip, partner_code)
+    VALUES (?, ?, ?, 10, ?, 10, ?, ?, 0, ?, ?, ?)
+  `).bind(id, username, passwordHash, genAddr(), newRcode, referredBy, now, ip, validPartnerCode).run()
 
   // 추천 관계 등록
   if (referredBy) {
@@ -292,8 +321,26 @@ app.post('/api/login', async (c) => {
   if (!user) return c.json({ error:'INVALID_CRED' }, 401)
   if (user.is_banned) return c.json({ error:'BANNED' }, 403)
 
+  // 브루트포스 방어: 잠금 상태 확인
+  const now0 = Date.now()
+  if (user.locked_until && user.locked_until > now0) {
+    const remainMin = Math.ceil((user.locked_until - now0) / 60000)
+    return c.json({ error:'LOCKED', remainMin }, 403)
+  }
+
   const ok = await verifyPassword(password, user.password_hash)
-  if (!ok) return c.json({ error:'INVALID_CRED' }, 401)
+  if (!ok) {
+    const newFail = (user.login_fail_count || 0) + 1
+    if (newFail >= LOGIN_MAX_FAIL) {
+      await c.env.DB.prepare('UPDATE users SET login_fail_count=?, locked_until=? WHERE id=?')
+        .bind(newFail, now0 + LOGIN_LOCK_MS, user.id).run()
+      return c.json({ error:'LOCKED', remainMin: 15 }, 403)
+    }
+    await c.env.DB.prepare('UPDATE users SET login_fail_count=? WHERE id=?').bind(newFail, user.id).run()
+    return c.json({ error:'INVALID_CRED' }, 401)
+  }
+  // 로그인 성공 → 실패 카운트 초기화
+  await c.env.DB.prepare('UPDATE users SET login_fail_count=0, locked_until=0 WHERE id=?').bind(user.id).run()
 
   const ip  = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
   const now = Date.now()
@@ -667,21 +714,29 @@ app.get('/api/next-round-hash', async (c) => {
 // API: 공지사항
 // ─────────────────────────────────────────────
 app.get('/api/notices', async (c) => {
+  const lang = c.req.query('lang') || 'ko'
   const notices = await c.env.DB.prepare(
-    "SELECT id, content, type, created_at FROM notices WHERE is_active=1 ORDER BY created_at DESC LIMIT 5"
+    "SELECT id, content, content_en, content_zh, content_ja, type, created_at FROM notices WHERE is_active=1 ORDER BY created_at DESC LIMIT 5"
   ).all<any>()
-  return c.json({ notices: notices.results || [] })
+  const result = (notices.results || []).map((n: any) => ({
+    ...n,
+    displayContent: (lang === 'en' && n.content_en) ? n.content_en
+      : (lang === 'zh' && n.content_zh) ? n.content_zh
+      : (lang === 'ja' && n.content_ja) ? n.content_ja
+      : n.content
+  }))
+  return c.json({ notices: result })
 })
 
 app.post('/api/admin/notice', async (c) => {
   if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const { content, type } = await c.req.json()
+  const { content, content_en, content_zh, content_ja, type } = await c.req.json()
   if (!content || content.trim().length === 0) return c.json({ error:'EMPTY_CONTENT' }, 400)
   const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   const now = Date.now()
   await c.env.DB.prepare(
-    'INSERT INTO notices (id, content, type, is_active, created_by, created_at, updated_at) VALUES (?,?,?,1,?,?,?)'
-  ).bind(uid(), content.trim(), type || 'info', user!.id, now, now).run()
+    'INSERT INTO notices (id, content, content_en, content_zh, content_ja, type, is_active, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,1,?,?,?)'
+  ).bind(uid(), content.trim(), content_en||'', content_zh||'', content_ja||'', type || 'info', user!.id, now, now).run()
   return c.json({ success: true })
 })
 
@@ -689,6 +744,196 @@ app.post('/api/admin/notice/delete', async (c) => {
   if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
   const { noticeId } = await c.req.json()
   await c.env.DB.prepare('UPDATE notices SET is_active=0 WHERE id=?').bind(noticeId).run()
+  return c.json({ success: true })
+})
+
+// ─────────────────────────────────────────────
+// API: 파트너 시스템
+// ─────────────────────────────────────────────
+app.get('/api/partner/:code', async (c) => {
+  const code = c.req.param('code')
+  const partner = await c.env.DB.prepare(
+    'SELECT code, name, user_count, total_bet_via, total_earned FROM partners WHERE code=? AND is_active=1'
+  ).bind(code).first<any>()
+  if (!partner) return c.json({ error:'NOT_FOUND' }, 404)
+  return c.json({ partner })
+})
+
+app.get('/api/admin/partners', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const partners = await c.env.DB.prepare(
+    'SELECT * FROM partners ORDER BY created_at DESC LIMIT 100'
+  ).all<any>()
+  return c.json({ partners: partners.results || [] })
+})
+
+app.post('/api/admin/partner/create', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { name, owner_username, commission_rate, note } = await c.req.json()
+  if (!name || !owner_username) return c.json({ error:'NEED_FIELDS' }, 400)
+  // 파트너 코드 생성 (대문자 6자리)
+  const code = rcode() + rcode().slice(0,2)
+  const now  = Date.now()
+  const rate = Math.min(0.20, Math.max(0.01, parseFloat(commission_rate) || PARTNER_RATE))
+  await c.env.DB.prepare(
+    'INSERT INTO partners (id, code, name, owner_username, commission_rate, note, created_at) VALUES (?,?,?,?,?,?,?)'
+  ).bind(uid(), code, name, owner_username, rate, note||'', now).run()
+  return c.json({ success: true, code, commission_rate: rate })
+})
+
+app.post('/api/admin/partner/update', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { code, commission_rate, is_active, note } = await c.req.json()
+  const rate = Math.min(0.20, Math.max(0.01, parseFloat(commission_rate) || PARTNER_RATE))
+  await c.env.DB.prepare(
+    'UPDATE partners SET commission_rate=?, is_active=?, note=? WHERE code=?'
+  ).bind(rate, is_active ? 1 : 0, note||'', code).run()
+  return c.json({ success: true })
+})
+
+app.get('/api/admin/partner/earnings', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const code  = c.req.query('code') || ''
+  const limit = parseInt(c.req.query('limit') || '50')
+  const logs  = await c.env.DB.prepare(
+    'SELECT pel.*, u.username FROM partner_earning_logs pel LEFT JOIN users u ON pel.user_id=u.id WHERE pel.partner_code=? ORDER BY pel.created_at DESC LIMIT ?'
+  ).bind(code, limit).all<any>()
+  return c.json({ logs: logs.results || [] })
+})
+
+// ─────────────────────────────────────────────
+// API: 1:1 문의
+// ─────────────────────────────────────────────
+app.get('/api/inquiries', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+  const inquiries = await c.env.DB.prepare(
+    'SELECT id, title, category, status, admin_reply, created_at, admin_reply_at FROM inquiries WHERE user_id=? ORDER BY created_at DESC LIMIT 30'
+  ).bind(user.id).all<any>()
+  return c.json({ inquiries: inquiries.results || [] })
+})
+
+app.post('/api/inquiry/create', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+  const { title, content, category } = await c.req.json()
+  if (!title || !content) return c.json({ error:'NEED_FIELDS' }, 400)
+  if (title.length > 100) return c.json({ error:'TITLE_TOO_LONG' }, 400)
+  if (content.length > 2000) return c.json({ error:'CONTENT_TOO_LONG' }, 400)
+  const now = Date.now()
+  const id  = uid()
+  await c.env.DB.prepare(
+    'INSERT INTO inquiries (id, user_id, username, title, content, category, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
+  ).bind(id, user.id, user.username, title, content, category||'general', 'pending', now, now).run()
+  return c.json({ success: true, id })
+})
+
+app.get('/api/inquiry/:id', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+  const inq = await c.env.DB.prepare(
+    'SELECT * FROM inquiries WHERE id=? AND user_id=?'
+  ).bind(c.req.param('id'), user.id).first<any>()
+  if (!inq) return c.json({ error:'NOT_FOUND' }, 404)
+  return c.json({ inquiry: inq })
+})
+
+app.get('/api/admin/inquiries', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const status = c.req.query('status') || ''
+  const page   = parseInt(c.req.query('page') || '1')
+  const limit  = 20
+  const offset = (page - 1) * limit
+  const rows   = status
+    ? await c.env.DB.prepare('SELECT * FROM inquiries WHERE status=? ORDER BY created_at DESC LIMIT ? OFFSET ?').bind(status, limit, offset).all<any>()
+    : await c.env.DB.prepare('SELECT * FROM inquiries ORDER BY created_at DESC LIMIT ? OFFSET ?').bind(limit, offset).all<any>()
+  const total  = status
+    ? await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM inquiries WHERE status=?').bind(status).first<{cnt:number}>()
+    : await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM inquiries').first<{cnt:number}>()
+  const pendingCnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM inquiries WHERE status="pending"').first<{cnt:number}>()
+  return c.json({ inquiries: rows.results || [], total: total?.cnt || 0, totalPages: Math.ceil((total?.cnt||0)/limit), pendingCount: pendingCnt?.cnt || 0 })
+})
+
+app.post('/api/admin/inquiry/reply', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { inquiryId, reply } = await c.req.json()
+  if (!inquiryId || !reply) return c.json({ error:'NEED_FIELDS' }, 400)
+  const now = Date.now()
+  await c.env.DB.prepare(
+    'UPDATE inquiries SET admin_reply=?, admin_reply_at=?, status="answered", updated_at=? WHERE id=?'
+  ).bind(reply, now, now, inquiryId).run()
+  return c.json({ success: true })
+})
+
+app.post('/api/admin/inquiry/close', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { inquiryId } = await c.req.json()
+  await c.env.DB.prepare('UPDATE inquiries SET status="closed", updated_at=? WHERE id=?').bind(Date.now(), inquiryId).run()
+  return c.json({ success: true })
+})
+
+// ─────────────────────────────────────────────
+// API: FAQ
+// ─────────────────────────────────────────────
+app.get('/api/faqs', async (c) => {
+  const lang     = c.req.query('lang') || 'ko'
+  const category = c.req.query('category') || ''
+  const rows     = category
+    ? await c.env.DB.prepare('SELECT * FROM faqs WHERE is_active=1 AND category=? ORDER BY sort_order ASC, created_at ASC').bind(category).all<any>()
+    : await c.env.DB.prepare('SELECT * FROM faqs WHERE is_active=1 ORDER BY sort_order ASC, created_at ASC').all<any>()
+  const result = (rows.results || []).map((f: any) => ({
+    id: f.id, category: f.category, sort_order: f.sort_order,
+    question: (lang==='en' && f.question_en) ? f.question_en : (lang==='zh' && f.question_zh) ? f.question_zh : (lang==='ja' && f.question_ja) ? f.question_ja : f.question,
+    answer:   (lang==='en' && f.answer_en)   ? f.answer_en   : (lang==='zh' && f.answer_zh)   ? f.answer_zh   : (lang==='ja' && f.answer_ja)   ? f.answer_ja   : f.answer,
+  }))
+  return c.json({ faqs: result })
+})
+
+app.post('/api/admin/faq/create', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { category, question, answer, question_en, answer_en, question_zh, answer_zh, question_ja, answer_ja, sort_order } = await c.req.json()
+  if (!question || !answer) return c.json({ error:'NEED_FIELDS' }, 400)
+  const now = Date.now()
+  await c.env.DB.prepare(
+    'INSERT INTO faqs (id, category, question, answer, question_en, answer_en, question_zh, answer_zh, question_ja, answer_ja, sort_order, is_active, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?)'
+  ).bind(uid(), category||'general', question, answer, question_en||'', answer_en||'', question_zh||'', answer_zh||'', question_ja||'', answer_ja||'', sort_order||0, now, now).run()
+  return c.json({ success: true })
+})
+
+app.post('/api/admin/faq/update', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { id, category, question, answer, question_en, answer_en, question_zh, answer_zh, question_ja, answer_ja, sort_order, is_active } = await c.req.json()
+  const now = Date.now()
+  await c.env.DB.prepare(
+    'UPDATE faqs SET category=?, question=?, answer=?, question_en=?, answer_en=?, question_zh=?, answer_zh=?, question_ja=?, answer_ja=?, sort_order=?, is_active=?, updated_at=? WHERE id=?'
+  ).bind(category, question, answer, question_en||'', answer_en||'', question_zh||'', answer_zh||'', question_ja||'', answer_ja||'', sort_order||0, is_active?1:0, now, id).run()
+  return c.json({ success: true })
+})
+
+app.post('/api/admin/faq/delete', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { id } = await c.req.json()
+  await c.env.DB.prepare('UPDATE faqs SET is_active=0 WHERE id=?').bind(id).run()
+  return c.json({ success: true })
+})
+
+// 관리자 유저 메모 업데이트
+app.post('/api/admin/user/memo', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { userId, memo } = await c.req.json()
+  await c.env.DB.prepare('UPDATE users SET admin_memo=? WHERE id=?').bind(memo||'', userId).run()
+  return c.json({ success: true })
+})
+
+// 관리자 비밀번호 강제 초기화
+app.post('/api/admin/user/reset-password', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { userId, newPassword } = await c.req.json()
+  if (!newPassword || newPassword.length < 6) return c.json({ error:'PASSWORD_SHORT' }, 400)
+  const hash = await hashPassword(newPassword)
+  await c.env.DB.prepare('UPDATE users SET password_hash=?, login_fail_count=0, locked_until=0 WHERE id=?').bind(hash, userId).run()
+  // 해당 유저 세션 전체 삭제
+  await c.env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId).run()
   return c.json({ success: true })
 })
 
@@ -927,6 +1172,8 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
     <button onclick="showTab('dashboard')" id="t-dashboard" class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_dashboard">📊 투명성</button>
     <button onclick="showTab('referral')"  id="t-referral"  class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_referral">👥 추천수당</button>
     <button onclick="showTab('verify')"    id="t-verify"    class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_verify">🔍 검증</button>
+    <button onclick="showTab('faq')"       id="t-faq"       class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_faq">❓ FAQ</button>
+    <button onclick="showTab('support')"   id="t-support"   class="tab-off hidden px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_support">💬 문의</button>
     <button onclick="showTab('login')"     id="t-login"     class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="login">🔐 로그인</button>
     <button onclick="showTab('register')"  id="t-register"  class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="register">✍️ 가입</button>
     <button onclick="showTab('admin')"     id="t-admin"     class="tab-off hidden px-4 py-2.5 text-xs font-bold transition text-yellow-400">⚙️ 관리자</button>
@@ -1373,14 +1620,21 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
   <!-- 공지 관리 -->
   <div class="glass rounded-xl p-4 mb-4">
     <div class="font-bold text-sm text-yellow-400 mb-3">📢 공지사항 관리</div>
-    <div class="flex gap-2 mb-2">
-      <input type="text" id="noticeInput" placeholder="공지 내용 입력..." class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-yellow-400">
-      <select id="noticeType" class="bg-white/10 border border-white/20 rounded-lg px-2 py-2 text-white text-xs focus:outline-none">
-        <option value="info">ℹ️ 안내</option>
-        <option value="warning">⚠️ 경고</option>
-        <option value="danger">🚨 긴급</option>
-      </select>
-      <button onclick="postNotice()" class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">등록</button>
+    <div class="space-y-2 mb-2">
+      <div class="flex gap-2">
+        <input type="text" id="noticeInput" placeholder="공지 내용 (한국어)" class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-yellow-400">
+        <select id="noticeType" class="bg-white/10 border border-white/20 rounded-lg px-2 py-2 text-white text-xs focus:outline-none">
+          <option value="info">ℹ️ 안내</option>
+          <option value="warning">⚠️ 경고</option>
+          <option value="danger">🚨 긴급</option>
+        </select>
+      </div>
+      <input type="text" id="noticeInputEn" placeholder="Notice (English, optional)" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400">
+      <div class="flex gap-2">
+        <input type="text" id="noticeInputZh" placeholder="公告 (中文, 可选)" class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400">
+        <input type="text" id="noticeInputJa" placeholder="お知らせ (日本語, 任意)" class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400">
+      </div>
+      <button onclick="postNotice()" class="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">등록</button>
     </div>
     <div id="adNoticeList" class="space-y-1 text-xs"><div class="text-gray-500 text-center py-2">공지 없음</div></div>
   </div>
@@ -1424,11 +1678,156 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
         <input type="number" id="adBalAmt" placeholder="금액" min="0" step="0.01" class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-yellow-400">
         <span class="flex items-center text-xs text-gray-400">USDT</span>
       </div>
+      <div class="mb-2">
+        <label class="text-xs text-gray-400 block mb-1">관리자 메모</label>
+        <input type="text" id="adMemoInput" placeholder="메모 입력..." class="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400">
+      </div>
       <div class="flex gap-2">
         <button onclick="adminAdjBal('add')" class="flex-1 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-xs font-bold transition">+ 추가</button>
         <button onclick="adminAdjBal('set')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">= 설정</button>
+        <button onclick="adminResetPw()" class="flex-1 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-xs font-bold transition">🔑 비번초기화</button>
         <button onclick="document.getElementById('adBalModal').classList.add('hidden')" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition">취소</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 파트너 관리 -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm text-yellow-400">🤝 파트너(대리점) 관리</div>
+      <button onclick="loadAdminPartners()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄</button>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <input type="text" id="pName" placeholder="파트너명" class="flex-1 min-w-0 bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400">
+      <input type="text" id="pOwner" placeholder="운영자 아이디" class="flex-1 min-w-0 bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400">
+      <input type="number" id="pRate" placeholder="수수료%" value="5" min="1" max="20" step="0.5" class="w-20 bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400">
+      <button onclick="createPartner()" class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">+ 파트너 생성</button>
+    </div>
+    <div id="adPartnerList" class="space-y-2 text-xs"><div class="text-gray-500 text-center py-2">파트너 없음</div></div>
+  </div>
+
+  <!-- 1:1 문의 관리 -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm text-yellow-400">💬 1:1 문의 관리 <span id="adInquiryBadge" class="hidden ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full font-black">0</span></div>
+      <div class="flex gap-1">
+        <button onclick="loadAdminInquiries('pending')" class="px-2 py-1 bg-orange-500/20 text-orange-300 rounded text-xs hover:bg-orange-500/30 transition">미답변</button>
+        <button onclick="loadAdminInquiries('')" class="px-2 py-1 bg-white/10 rounded text-xs hover:bg-white/20 transition">전체</button>
+      </div>
+    </div>
+    <div id="adInquiryList" class="space-y-2"><div class="text-xs text-gray-500 text-center py-3">로딩 중...</div></div>
+    <!-- 답변 모달 -->
+    <div id="adReplyModal" class="hidden mt-3 bg-black/30 rounded-xl p-3 border border-blue-500/30">
+      <div class="text-xs text-blue-400 font-bold mb-2">✏️ 답변 작성</div>
+      <div class="text-xs text-gray-400 mb-2" id="adReplyTitle">-</div>
+      <input type="hidden" id="adReplyInqId">
+      <textarea id="adReplyText" rows="3" placeholder="답변 내용 입력..." class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-blue-400 resize-none mb-2"></textarea>
+      <div class="flex gap-2">
+        <button onclick="submitAdminReply()" class="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold transition">답변 등록</button>
+        <button onclick="closeAdminReply()" class="px-3 py-1.5 bg-white/10 rounded-lg text-xs transition">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAQ 관리 -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm text-yellow-400">❓ FAQ 관리</div>
+      <button onclick="loadAdminFAQs()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄</button>
+    </div>
+    <div class="space-y-2 mb-3">
+      <div class="flex gap-2 flex-wrap">
+        <select id="faqAdCat" class="bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none">
+          <option value="general">일반</option><option value="deposit">입금</option>
+          <option value="withdraw">출금</option><option value="bet">게임</option>
+          <option value="referral">추천</option><option value="partner">파트너</option>
+        </select>
+        <input type="number" id="faqAdOrder" placeholder="순서" value="0" class="w-16 bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none">
+      </div>
+      <input type="text" id="faqAdQ" placeholder="질문 (한국어)" class="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400">
+      <textarea id="faqAdA" rows="2" placeholder="답변 (한국어)" class="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+      <input type="text" id="faqAdQen" placeholder="질문 (English, 선택)" class="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400">
+      <textarea id="faqAdAen" rows="2" placeholder="답변 (English, 선택)" class="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+      <button onclick="createFAQ()" class="w-full py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">+ FAQ 등록</button>
+    </div>
+    <div id="adFaqList" class="space-y-1 text-xs"><div class="text-gray-500 text-center py-2">FAQ 없음</div></div>
+  </div>
+</div>
+
+<!-- ══ FAQ 탭 ══ -->
+<div id="p-faq" class="hidden">
+  <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="tab_faq">❓ FAQ</h2><p class="text-gray-400 text-sm" data-i18n="faq_desc">자주 묻는 질문과 답변</p></div>
+  <!-- 카테고리 필터 -->
+  <div class="flex flex-wrap gap-2 mb-4" id="faqCatBtns">
+    <button onclick="loadFAQ('')"         class="faq-cat-btn active px-3 py-1.5 rounded-full text-xs font-bold transition bg-blue-500/30 text-blue-300 border border-blue-500/40" data-cat="">전체</button>
+    <button onclick="loadFAQ('general')"  class="faq-cat-btn px-3 py-1.5 rounded-full text-xs font-bold transition bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20" data-cat="general" data-i18n="faq_cat_general">일반</button>
+    <button onclick="loadFAQ('deposit')"  class="faq-cat-btn px-3 py-1.5 rounded-full text-xs font-bold transition bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20" data-cat="deposit" data-i18n="faq_cat_deposit">입금</button>
+    <button onclick="loadFAQ('withdraw')" class="faq-cat-btn px-3 py-1.5 rounded-full text-xs font-bold transition bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20" data-cat="withdraw" data-i18n="faq_cat_withdraw">출금</button>
+    <button onclick="loadFAQ('bet')"      class="faq-cat-btn px-3 py-1.5 rounded-full text-xs font-bold transition bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20" data-cat="bet" data-i18n="faq_cat_bet">게임</button>
+    <button onclick="loadFAQ('referral')" class="faq-cat-btn px-3 py-1.5 rounded-full text-xs font-bold transition bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20" data-cat="referral" data-i18n="faq_cat_referral">추천</button>
+    <button onclick="loadFAQ('partner')"  class="faq-cat-btn px-3 py-1.5 rounded-full text-xs font-bold transition bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20" data-cat="partner" data-i18n="faq_cat_partner">파트너</button>
+  </div>
+  <div id="faqList" class="space-y-2">
+    <div class="text-center text-gray-500 py-8 text-sm" data-i18n="no_record">기록 없음</div>
+  </div>
+  <!-- 문의 링크 -->
+  <div class="mt-6 glass rounded-xl p-4 text-center">
+    <div class="text-gray-400 text-sm mb-3" data-i18n="faq_no_answer">원하는 답변이 없으신가요?</div>
+    <button onclick="showTab('support')" id="faqToSupport" class="hidden px-6 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-bold transition" data-i18n="faq_contact">1:1 문의하기</button>
+    <button onclick="showTab('login')" id="faqToLogin" class="hidden px-6 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-bold transition" data-i18n="login">로그인 후 문의</button>
+  </div>
+</div>
+
+<!-- ══ 1:1 문의 탭 ══ -->
+<div id="p-support" class="hidden">
+  <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="tab_support">💬 1:1 문의</h2><p class="text-gray-400 text-sm" data-i18n="support_desc">궁금한 점을 문의하시면 빠르게 답변드립니다</p></div>
+  <div id="supportNeedLogin" class="glass rounded-xl p-8 text-center">
+    <div class="text-gray-400 mb-3 text-sm" data-i18n="need_login">로그인이 필요합니다</div>
+    <button onclick="showTab('login')" class="px-6 py-2 bg-blue-600 rounded-xl hover:bg-blue-700 transition text-sm font-bold" data-i18n="login">로그인</button>
+  </div>
+  <div id="supportInfo" class="hidden space-y-4">
+    <!-- 새 문의 작성 -->
+    <div class="glass rounded-xl p-5">
+      <div class="font-bold mb-3 text-sm text-blue-400">✏️ <span data-i18n="new_inquiry">새 문의 작성</span></div>
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1" data-i18n="inquiry_category">카테고리</label>
+          <select id="inqCat" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-400">
+            <option value="general" data-i18n="faq_cat_general">일반</option>
+            <option value="deposit" data-i18n="faq_cat_deposit">입금</option>
+            <option value="withdraw" data-i18n="faq_cat_withdraw">출금</option>
+            <option value="bet" data-i18n="faq_cat_bet">게임</option>
+            <option value="referral" data-i18n="faq_cat_referral">추천</option>
+            <option value="other">기타</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1" data-i18n="inquiry_title">제목</label>
+          <input type="text" id="inqTitle" maxlength="100" placeholder="문의 제목을 입력하세요" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-400">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1" data-i18n="inquiry_content">내용</label>
+          <textarea id="inqContent" rows="5" maxlength="2000" placeholder="문의 내용을 상세히 입력하세요 (최대 2000자)" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-400 resize-none"></textarea>
+          <div class="text-xs text-gray-500 text-right mt-0.5"><span id="inqCharCount">0</span>/2000</div>
+        </div>
+        <div id="inqErr" class="hidden text-red-400 text-xs bg-red-500/10 rounded-lg p-2"></div>
+        <button onclick="submitInquiry()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold transition text-sm" data-i18n="inquiry_submit">문의 제출</button>
+      </div>
+    </div>
+    <!-- 내 문의 목록 -->
+    <div class="glass rounded-xl p-4">
+      <div class="font-bold mb-3 text-sm text-gray-300" data-i18n="my_inquiries">📋 내 문의 내역</div>
+      <div id="myInquiryList" class="space-y-2">
+        <div class="text-xs text-gray-500 text-center py-3" data-i18n="no_record">기록 없음</div>
+      </div>
+    </div>
+    <!-- 문의 상세 모달 -->
+    <div id="inqDetailModal" class="hidden glass rounded-xl p-5 border border-blue-500/30">
+      <div class="flex items-center justify-between mb-3">
+        <div class="font-bold text-sm text-blue-400" data-i18n="inquiry_detail">📄 문의 상세</div>
+        <button onclick="closeInquiryDetail()" class="text-gray-400 hover:text-white text-xs">✕ 닫기</button>
+      </div>
+      <div id="inqDetailContent"></div>
     </div>
   </div>
 </div>
