@@ -2,133 +2,28 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/cloudflare-workers'
 
-const app = new Hono<{ Bindings: { ADMIN_PASSWORD?: string } }>()
+// ─────────────────────────────────────────────
+// 타입 정의
+// ─────────────────────────────────────────────
+type Bindings = { DB: D1Database }
+
+const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
 app.use('/static/*', serveStatic({ root: './' }))
 
 // ─────────────────────────────────────────────
-// 타입 정의
+// 상수
 // ─────────────────────────────────────────────
-interface User {
-  id: string
-  username: string
-  passwordHash: string
-  balance: number
-  depositAddress: string
-  totalDeposit: number
-  totalWithdraw: number
-  totalBetAmount: number      // 누적 베팅액 (출금 조건)
-  referralCode: string
-  referredBy: string | null
-  level1Referrals: string[]
-  level2Referrals: string[]
-  totalEarned: number
-  referralEarnings: number
-  isAdmin: boolean
-  isBanned: boolean
-  createdAt: number
-  lastIp: string
-  loginCount: number
-}
-
-interface Bet {
-  userId: string
-  username: string
-  choice: 'odd' | 'even'
-  amount: number
-  timestamp: number
-}
-
-interface BetHistory {
-  userId: string
-  username: string
-  choice: 'odd' | 'even'
-  amount: number
-  win: boolean
-  payout: number
-  roundId: number
-  result: 'odd' | 'even'
-  timestamp: number
-}
-
-interface Round {
-  id: number
-  status: 'betting' | 'finished'
-  startTime: number
-  endTime: number
-  bets: Bet[]
-  result: 'odd' | 'even' | null
-  hashValue: string | null
-  serverSeed: string
-  serverSeedHash: string
-  blockHeight: number
-  totalOdd: number
-  totalEven: number
-  settled: boolean
-}
-
-interface HistoryItem {
-  roundId: number
-  result: 'odd' | 'even'
-  hashValue: string
-  blockHeight: number
-  totalBets: number
-  totalPayout: number
-  timestamp: number
-  serverSeed: string
-}
-
-interface WithdrawRequest {
-  id: string
-  userId: string
-  username: string
-  amount: number
-  address: string
-  status: 'pending' | 'approved' | 'rejected'
-  createdAt: number
-  processedAt: number | null
-  txHash: string | null
-  note: string
-}
-
-interface DepositLog {
-  id: string
-  userId: string
-  username: string
-  amount: number
-  txHash: string
-  createdAt: number
-}
-
-// ─────────────────────────────────────────────
-// 전역 상태
-// ─────────────────────────────────────────────
-const users     = new Map<string, User>()
-const sessions  = new Map<string, string>()
-const ipRegistry= new Map<string, string[]>() // ip -> userId[]
-
-const ROUND_DURATION = 30000
-const RESULT_SHOW    = 8000
-const CYCLE          = ROUND_DURATION + RESULT_SHOW
-const GAME_START     = Date.now()
-
-const rounds      = new Map<number, Round>()
-const gameHistory : HistoryItem[]   = []
-const allBetHistory: BetHistory[]  = []
-const withdrawRequests = new Map<string, WithdrawRequest>()
-const depositLogs: DepositLog[] = []
-
-let totalBetAmountGlobal  = 0
-let totalPayoutAmountGlobal = 0
-let totalReferralPaid = 0
-
-const PAYOUT = 1.90
-const L1     = 0.025
-const L2     = 0.010
-const MIN_WITHDRAW_BET = 10  // 출금하려면 최소 누적 10 USDT 베팅 필요
-const MIN_WITHDRAW_AMT = 1   // 최소 출금 1 USDT
-const MAX_BET = 1000
-const MIN_BET = 0.1
+const PAYOUT          = 1.90
+const L1              = 0.025
+const L2              = 0.010
+const MIN_WITHDRAW_AMT = 1
+const MIN_BET         = 0.1
+const MAX_BET         = 1000
+const ROUND_DURATION  = 30000   // ms
+const RESULT_SHOW     = 8000    // ms
+const CYCLE           = ROUND_DURATION + RESULT_SHOW
+const GAME_START      = 1700000000000  // 고정 기준시간 (서버 재시작 무관)
 
 // ─────────────────────────────────────────────
 // 유틸
@@ -136,139 +31,190 @@ const MIN_BET = 0.1
 async function sha256(msg: string): Promise<string> {
   const buf  = new TextEncoder().encode(msg)
   const hash = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('')
 }
 
-// 비밀번호 해싱 (Web Crypto PBKDF2)
 async function hashPassword(password: string): Promise<string> {
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('')
-  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
-  const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt, iterations:100000, hash:'SHA-256' }, keyMaterial, 256)
-  const hashHex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('')
+  const salt    = crypto.getRandomValues(new Uint8Array(16))
+  const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2,'0')).join('')
+  const key     = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits    = await crypto.subtle.deriveBits({ name:'PBKDF2', salt, iterations:100000, hash:'SHA-256' }, key, 256)
+  const hashHex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2,'0')).join('')
   return saltHex + ':' + hashHex
 }
 
 async function verifyPassword(password: string, stored: string): Promise<boolean> {
   try {
     const [saltHex, storedHash] = stored.split(':')
-    const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map(h => parseInt(h, 16)))
-    const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
-    const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt, iterations:100000, hash:'SHA-256' }, keyMaterial, 256)
-    const hashHex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('')
+    const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map(h => parseInt(h,16)))
+    const key  = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+    const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt, iterations:100000, hash:'SHA-256' }, key, 256)
+    const hashHex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2,'0')).join('')
     return hashHex === storedHash
   } catch { return false }
 }
 
-const uid   = () => Math.random().toString(36).slice(2,15) + Math.random().toString(36).slice(2,15)
-const rcode = () => Math.random().toString(36).slice(2,8).toUpperCase()
-const getU  = (sid: string) => { const id = sessions.get(sid); return id ? users.get(id) ?? null : null }
-const isOdd = (h: string)   => parseInt(h[h.length-1], 16) % 2 === 1
+const uid     = () => crypto.randomUUID().replace(/-/g,'')
+const rcode   = () => Math.random().toString(36).slice(2,8).toUpperCase()
 const genAddr = () => 'T' + Array.from({length:33}, () => '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'[Math.floor(Math.random()*58)]).join('')
+const isOdd   = (h: string) => parseInt(h[h.length-1], 16) % 2 === 1
+const r2      = (n: number) => Math.round(n * 100) / 100
 
 // ─────────────────────────────────────────────
-// 라운드 상태머신
+// 라운드 페이즈 계산
 // ─────────────────────────────────────────────
 function getPhase() {
   const elapsed = (Date.now() - GAME_START) % CYCLE
   const idx     = Math.floor((Date.now() - GAME_START) / CYCLE)
   if (elapsed < ROUND_DURATION)
-    return { phase: 'betting' as const, timeLeft: Math.floor((ROUND_DURATION - elapsed)/1000), idx }
-  return   { phase: 'result'  as const, timeLeft: Math.floor((CYCLE - elapsed)/1000), idx }
+    return { phase: 'betting' as const, timeLeft: Math.ceil((ROUND_DURATION - elapsed)/1000), idx }
+  return   { phase: 'result'  as const, timeLeft: Math.ceil((CYCLE - elapsed)/1000), idx }
 }
 
-async function ensureRound(idx: number): Promise<Round> {
-  if (rounds.has(idx)) return rounds.get(idx)!
+// ─────────────────────────────────────────────
+// DB 헬퍼
+// ─────────────────────────────────────────────
+async function getSession(db: D1Database, sid: string) {
+  if (!sid) return null
+  const row = await db.prepare('SELECT user_id FROM sessions WHERE id=?').bind(sid).first<{user_id:string}>()
+  return row ? row.user_id : null
+}
+
+async function getUser(db: D1Database, userId: string) {
+  return db.prepare('SELECT * FROM users WHERE id=?').bind(userId).first<any>()
+}
+
+async function getUserBySid(db: D1Database, sid: string) {
+  const uid = await getSession(db, sid)
+  if (!uid) return null
+  return getUser(db, uid)
+}
+
+async function ensureRound(db: D1Database, idx: number) {
+  const roundId = idx + 1
+  const existing = await db.prepare('SELECT * FROM rounds WHERE id=?').bind(roundId).first<any>()
+  if (existing) return existing
+
   const serverSeed     = uid() + uid()
   const serverSeedHash = await sha256(serverSeed)
-  const round: Round   = {
-    id: idx+1, status: 'betting',
-    startTime: GAME_START + idx*CYCLE,
-    endTime:   GAME_START + idx*CYCLE + ROUND_DURATION,
-    bets: [], result: null, hashValue: null,
-    serverSeed, serverSeedHash,
-    blockHeight: 881000 + idx + 1,
-    totalOdd: 0, totalEven: 0, settled: false
-  }
-  rounds.set(idx, round)
-  return round
+  const startTime      = GAME_START + idx * CYCLE
+  const endTime        = startTime + ROUND_DURATION
+  const blockHeight    = 881000 + roundId
+
+  await db.prepare(`
+    INSERT INTO rounds (id, status, start_time, end_time, server_seed, server_seed_hash, block_height, settled, created_at)
+    VALUES (?, 'betting', ?, ?, ?, ?, ?, 0, ?)
+  `).bind(roundId, startTime, endTime, serverSeed, serverSeedHash, blockHeight, Date.now()).run()
+
+  return db.prepare('SELECT * FROM rounds WHERE id=?').bind(roundId).first<any>()
 }
 
-async function settleRound(round: Round) {
-  if (round.settled) return
-  round.settled = true
-  const userSeeds = round.bets.map(b => b.userId).join('')
-  const hash      = await sha256(round.serverSeed + round.blockHeight + userSeeds)
-  const result    = isOdd(hash) ? 'odd' : 'even' as 'odd'|'even'
-  round.result    = result
-  round.hashValue = hash
-  round.status    = 'finished'
+async function settleRound(db: D1Database, round: any) {
+  if (round.settled) return round
+
+  // 이 라운드 베팅 가져오기
+  const betsResult = await db.prepare('SELECT * FROM bets WHERE round_id=? AND settled=0').bind(round.id).all<any>()
+  const bets = betsResult.results || []
+
+  const userSeeds = bets.map((b: any) => b.user_id).join('')
+  const hash      = await sha256(round.server_seed + round.block_height + userSeeds)
+  const result    = isOdd(hash) ? 'odd' : 'even'
 
   let totalPayout = 0
-  for (const bet of round.bets) {
-    const user = users.get(bet.userId)
-    if (!user) continue
-    totalBetAmountGlobal += bet.amount
-    user.totalBetAmount  += bet.amount
+  const stmts: any[] = []
+
+  for (const bet of bets) {
     const win    = bet.choice === result
-    const payout = win ? Math.round(bet.amount * PAYOUT * 100) / 100 : 0
+    const payout = win ? r2(bet.amount * PAYOUT) : 0
     totalPayout += payout
-    if (win) { user.balance += payout; totalPayoutAmountGlobal += payout; user.totalEarned += payout - bet.amount }
-    // 추천수당
-    if (user.referredBy) {
-      const l1u = users.get(user.referredBy)
-      if (l1u) {
-        const r1 = Math.round(bet.amount * L1 * 100) / 100
-        l1u.balance += r1; l1u.referralEarnings += r1; totalReferralPaid += r1
-        if (l1u.referredBy) {
-          const l2u = users.get(l1u.referredBy)
-          if (l2u) { const r2 = Math.round(bet.amount * L2 * 100) / 100; l2u.balance += r2; l2u.referralEarnings += r2; totalReferralPaid += r2 }
-        }
+
+    // 베팅 결과 업데이트
+    stmts.push(
+      db.prepare('UPDATE bets SET win=?, payout=?, settled=1 WHERE id=?')
+        .bind(win ? 1 : 0, payout, bet.id)
+    )
+
+    // 유저 잔액 업데이트
+    if (win) {
+      stmts.push(
+        db.prepare('UPDATE users SET balance=balance+?, total_earned=total_earned+? WHERE id=?')
+          .bind(payout, r2(payout - bet.amount), bet.user_id)
+      )
+    }
+    stmts.push(
+      db.prepare('UPDATE users SET total_bet_amount=total_bet_amount+? WHERE id=?')
+        .bind(bet.amount, bet.user_id)
+    )
+
+    // 추천수당 지급
+    const betUser = await db.prepare('SELECT referred_by FROM users WHERE id=?').bind(bet.user_id).first<any>()
+    if (betUser?.referred_by) {
+      const r1 = r2(bet.amount * L1)
+      stmts.push(
+        db.prepare('UPDATE users SET balance=balance+?, referral_earnings=referral_earnings+? WHERE id=?')
+          .bind(r1, r1, betUser.referred_by)
+      )
+      const l1User = await db.prepare('SELECT referred_by FROM users WHERE id=?').bind(betUser.referred_by).first<any>()
+      if (l1User?.referred_by) {
+        const r2amt = r2(bet.amount * L2)
+        stmts.push(
+          db.prepare('UPDATE users SET balance=balance+?, referral_earnings=referral_earnings+? WHERE id=?')
+            .bind(r2amt, r2amt, l1User.referred_by)
+        )
       }
     }
-    allBetHistory.unshift({ userId:bet.userId, username:bet.username, choice:bet.choice, amount:bet.amount, win, payout, roundId:round.id, result, timestamp:bet.timestamp })
   }
-  if (allBetHistory.length > 1000) allBetHistory.splice(1000)
-  gameHistory.unshift({ roundId:round.id, result, hashValue:hash, blockHeight:round.blockHeight, totalBets:round.totalOdd+round.totalEven, totalPayout, timestamp:Date.now(), serverSeed:round.serverSeed })
-  if (gameHistory.length > 200) gameHistory.pop()
+
+  // 라운드 결과 업데이트
+  stmts.push(
+    db.prepare('UPDATE rounds SET result=?, hash_value=?, status="finished", total_payout=?, settled=1 WHERE id=?')
+      .bind(result, hash, r2(totalPayout), round.id)
+  )
+
+  await db.batch(stmts)
+  return db.prepare('SELECT * FROM rounds WHERE id=?').bind(round.id).first<any>()
 }
 
+// ─────────────────────────────────────────────
+// 미들웨어: 라운드 자동 처리
+// ─────────────────────────────────────────────
 app.use('/api/*', async (c, next) => {
   const { phase, idx } = getPhase()
-  const round = await ensureRound(idx)
-  if (phase === 'result' && !round.settled) await settleRound(round)
+  const round = await ensureRound(c.env.DB, idx)
+  if (phase === 'result' && round && !round.settled) {
+    await settleRound(c.env.DB, round)
+  }
   await next()
 })
 
 // ─────────────────────────────────────────────
-// 데모 유저 초기화
+// 데모 유저 초기화 API (최초 1회)
 // ─────────────────────────────────────────────
-let initDone = false
-let initPromise: Promise<void> | null = null
+app.post('/api/init-demo', async (c) => {
+  const existing = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM users').first<{cnt:number}>()
+  if (existing && existing.cnt > 0) return c.json({ message: '이미 초기화됨', count: existing.cnt })
 
-async function initUsers() {
-  if (initDone) return
-  const list = [
-    { username:'admin',  password:'admin123',  balance:10000, isAdmin:true  },
-    { username:'demo1',  password:'demo123',   balance:500,   isAdmin:false },
-    { username:'demo2',  password:'demo123',   balance:250,   isAdmin:false },
-    { username:'tester', password:'test1234',  balance:1000,  isAdmin:false },
+  const demos = [
+    { username:'admin',  password:'admin123',  balance:10000, isAdmin:1 },
+    { username:'demo1',  password:'demo123',   balance:500,   isAdmin:0 },
+    { username:'demo2',  password:'demo123',   balance:250,   isAdmin:0 },
+    { username:'tester', password:'test1234',  balance:1000,  isAdmin:0 },
   ]
-  for (const d of list) {
-    const id = uid()
-    const passwordHash = await hashPassword(d.password)
-    users.set(id, { id, username:d.username, passwordHash, balance:d.balance, depositAddress:genAddr(), totalDeposit:d.balance, totalWithdraw:0, totalBetAmount:0, referralCode:rcode(), referredBy:null, level1Referrals:[], level2Referrals:[], totalEarned:0, referralEarnings:0, isAdmin:d.isAdmin, isBanned:false, createdAt:Date.now(), lastIp:'', loginCount:0 })
-  }
-  initDone = true
-}
 
-// 모든 API 요청 전에 초기화 보장
-app.use('*', async (c, next) => {
-  if (!initDone) {
-    if (!initPromise) initPromise = initUsers()
-    await initPromise
+  const stmts = []
+  for (const d of demos) {
+    const id   = uid()
+    const hash = await hashPassword(d.password)
+    stmts.push(
+      c.env.DB.prepare(`
+        INSERT INTO users (id, username, password_hash, balance, deposit_address, total_deposit,
+          referral_code, is_admin, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(id, d.username, hash, d.balance, genAddr(), d.balance, rcode(), d.isAdmin, Date.now())
+    )
   }
-  await next()
+  await c.env.DB.batch(stmts)
+  return c.json({ success: true, message: '데모 유저 4명 생성 완료' })
 })
 
 // ─────────────────────────────────────────────
@@ -276,97 +222,159 @@ app.use('*', async (c, next) => {
 // ─────────────────────────────────────────────
 app.post('/api/register', async (c) => {
   const { username, password, referralCode } = await c.req.json()
-  if (!username || !password) return c.json({ error:'NEED_FIELDS' }, 400)
-  if (username.length < 3)    return c.json({ error:'USERNAME_SHORT' }, 400)
-  if (password.length < 6)    return c.json({ error:'PASSWORD_SHORT' }, 400)
-  if ([...users.values()].find(u => u.username === username)) return c.json({ error:'USERNAME_TAKEN' }, 400)
+  if (!username || !password)     return c.json({ error:'NEED_FIELDS' }, 400)
+  if (username.length < 3)        return c.json({ error:'USERNAME_SHORT' }, 400)
+  if (password.length < 6)        return c.json({ error:'PASSWORD_SHORT' }, 400)
 
-  // IP 제한 (동일 IP 최대 3계정)
-  const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
-  const ipUsers = ipRegistry.get(ip) || []
-  if (ipUsers.length >= 3) return c.json({ error:'IP_LIMIT' }, 400)
+  const dup = await c.env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first()
+  if (dup) return c.json({ error:'USERNAME_TAKEN' }, 400)
 
-  let referredBy: string|null = null
-  let l1: User|null = null
+  // IP 제한
+  const ip      = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
+  const ipCount = await c.env.DB.prepare("SELECT COUNT(*) as cnt FROM users WHERE last_ip=?").bind(ip).first<{cnt:number}>()
+  if (ipCount && ipCount.cnt >= 3) return c.json({ error:'IP_LIMIT' }, 400)
+
+  let referredBy: string | null = null
   if (referralCode) {
-    l1 = [...users.values()].find(u => u.referralCode === referralCode) ?? null
-    if (!l1) return c.json({ error:'INVALID_REF' }, 400)
-    referredBy = l1.id
+    const refUser = await c.env.DB.prepare('SELECT id FROM users WHERE referral_code=?').bind(referralCode).first<{id:string}>()
+    if (!refUser) return c.json({ error:'INVALID_REF' }, 400)
+    referredBy = refUser.id
   }
-  const id = uid()
+
+  const id           = uid()
   const passwordHash = await hashPassword(password)
-  const newUser: User = { id, username, passwordHash, balance:10, depositAddress:genAddr(), totalDeposit:10, totalWithdraw:0, totalBetAmount:0, referralCode:rcode(), referredBy, level1Referrals:[], level2Referrals:[], totalEarned:0, referralEarnings:0, isAdmin:false, isBanned:false, createdAt:Date.now(), lastIp:ip, loginCount:0 }
-  users.set(id, newUser)
-  ipRegistry.set(ip, [...ipUsers, id])
-  if (l1) { l1.level1Referrals.push(id); if (l1.referredBy) { const l2u = users.get(l1.referredBy); if (l2u) l2u.level2Referrals.push(id) } }
-  const sid = uid(); sessions.set(sid, id)
-  return c.json({ success:true, sessionId:sid, user:{ id, username, balance:10, referralCode:newUser.referralCode, depositAddress:newUser.depositAddress, isAdmin:false } })
+  const newRcode     = rcode()
+  const now          = Date.now()
+
+  await c.env.DB.prepare(`
+    INSERT INTO users (id, username, password_hash, balance, deposit_address, total_deposit,
+      referral_code, referred_by, is_admin, created_at, last_ip)
+    VALUES (?, ?, ?, 10, ?, 10, ?, ?, 0, ?, ?)
+  `).bind(id, username, passwordHash, genAddr(), newRcode, referredBy, now, ip).run()
+
+  // 추천 관계 등록
+  if (referredBy) {
+    await c.env.DB.prepare('INSERT INTO referrals (id, referrer_id, referee_id, level, created_at) VALUES (?, ?, ?, 1, ?)').bind(uid(), referredBy, id, now).run()
+    // 2단계
+    const l1User = await c.env.DB.prepare('SELECT referred_by FROM users WHERE id=?').bind(referredBy).first<any>()
+    if (l1User?.referred_by) {
+      await c.env.DB.prepare('INSERT INTO referrals (id, referrer_id, referee_id, level, created_at) VALUES (?, ?, ?, 2, ?)').bind(uid(), l1User.referred_by, id, now).run()
+    }
+  }
+
+  const sid = uid()
+  await c.env.DB.prepare('INSERT INTO sessions (id, user_id, created_at) VALUES (?, ?, ?)').bind(sid, id, now).run()
+
+  return c.json({ success:true, sessionId:sid, user:{ id, username, balance:10, referralCode:newRcode, depositAddress:'', isAdmin:false } })
 })
 
 app.post('/api/login', async (c) => {
   const { username, password } = await c.req.json()
-  const user = [...users.values()].find(u => u.username === username)
+  const user = await c.env.DB.prepare('SELECT * FROM users WHERE username=?').bind(username).first<any>()
   if (!user) return c.json({ error:'INVALID_CRED' }, 401)
-  if (user.isBanned) return c.json({ error:'BANNED' }, 403)
-  const ok = await verifyPassword(password, user.passwordHash)
+  if (user.is_banned) return c.json({ error:'BANNED' }, 403)
+
+  const ok = await verifyPassword(password, user.password_hash)
   if (!ok) return c.json({ error:'INVALID_CRED' }, 401)
-  user.loginCount++
-  user.lastIp = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
-  const sid = uid(); sessions.set(sid, user.id)
-  return c.json({ success:true, sessionId:sid, user:{ id:user.id, username:user.username, balance:user.balance, referralCode:user.referralCode, referralEarnings:user.referralEarnings, level1Count:user.level1Referrals.length, level2Count:user.level2Referrals.length, depositAddress:user.depositAddress, isAdmin:user.isAdmin } })
+
+  const ip  = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
+  await c.env.DB.prepare('UPDATE users SET login_count=login_count+1, last_ip=? WHERE id=?').bind(ip, user.id).run()
+
+  const sid = uid()
+  await c.env.DB.prepare('INSERT INTO sessions (id, user_id, created_at) VALUES (?, ?, ?)').bind(sid, user.id, Date.now()).run()
+
+  // 추천 카운트
+  const l1cnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM referrals WHERE referrer_id=? AND level=1').bind(user.id).first<{cnt:number}>()
+  const l2cnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM referrals WHERE referrer_id=? AND level=2').bind(user.id).first<{cnt:number}>()
+
+  return c.json({ success:true, sessionId:sid, user:{
+    id: user.id, username: user.username, balance: user.balance,
+    referralCode: user.referral_code, referralEarnings: user.referral_earnings,
+    level1Count: l1cnt?.cnt || 0, level2Count: l2cnt?.cnt || 0,
+    depositAddress: user.deposit_address, isAdmin: !!user.is_admin
+  }})
 })
 
-app.post('/api/logout', async (c) => { sessions.delete(c.req.header('X-Session-Id')||''); return c.json({success:true}) })
+app.post('/api/logout', async (c) => {
+  const sid = c.req.header('X-Session-Id') || ''
+  if (sid) await c.env.DB.prepare('DELETE FROM sessions WHERE id=?').bind(sid).run()
+  return c.json({ success:true })
+})
 
 app.get('/api/me', async (c) => {
-  const user = getU(c.req.header('X-Session-Id')||'')
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
-  return c.json({ id:user.id, username:user.username, balance:user.balance, referralCode:user.referralCode, referralEarnings:user.referralEarnings, totalEarned:user.totalEarned, level1Count:user.level1Referrals.length, level2Count:user.level2Referrals.length, depositAddress:user.depositAddress, totalDeposit:user.totalDeposit, totalWithdraw:user.totalWithdraw, totalBetAmount:user.totalBetAmount, isAdmin:user.isAdmin })
+
+  const l1cnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM referrals WHERE referrer_id=? AND level=1').bind(user.id).first<{cnt:number}>()
+  const l2cnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM referrals WHERE referrer_id=? AND level=2').bind(user.id).first<{cnt:number}>()
+
+  return c.json({
+    id: user.id, username: user.username, balance: user.balance,
+    referralCode: user.referral_code, referralEarnings: user.referral_earnings,
+    totalEarned: user.total_earned,
+    level1Count: l1cnt?.cnt || 0, level2Count: l2cnt?.cnt || 0,
+    depositAddress: user.deposit_address,
+    totalDeposit: user.total_deposit, totalWithdraw: user.total_withdraw,
+    totalBetAmount: user.total_bet_amount, isAdmin: !!user.is_admin
+  })
 })
 
 // ─────────────────────────────────────────────
-// API: 입금 (가상 - 관리자가 수동 처리)
+// API: 입금
 // ─────────────────────────────────────────────
 app.post('/api/deposit/demo', async (c) => {
-  const user = getU(c.req.header('X-Session-Id')||'')
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
   const { amount } = await c.req.json()
-  if (!amount || amount < 1) return c.json({ error:'INVALID_AMOUNT' }, 400)
-  user.balance      += parseFloat(amount)
-  user.totalDeposit += parseFloat(amount)
-  depositLogs.unshift({ id:uid(), userId:user.id, username:user.username, amount:parseFloat(amount), txHash:'DEMO_'+uid(), createdAt:Date.now() })
-  return c.json({ success:true, balance:user.balance })
+  const amt = parseFloat(amount)
+  if (!amt || amt < 1) return c.json({ error:'INVALID_AMOUNT' }, 400)
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET balance=balance+?, total_deposit=total_deposit+? WHERE id=?').bind(amt, amt, user.id),
+    c.env.DB.prepare('INSERT INTO deposit_logs (id,user_id,username,amount,tx_hash,created_at) VALUES (?,?,?,?,?,?)').bind(uid(), user.id, user.username, amt, 'DEMO_'+uid(), Date.now())
+  ])
+
+  const updated = await getUser(c.env.DB, user.id)
+  return c.json({ success:true, balance: updated?.balance || 0 })
 })
 
 // ─────────────────────────────────────────────
-// API: 출금 신청 (조건 강화)
+// API: 출금
 // ─────────────────────────────────────────────
 app.post('/api/withdraw', async (c) => {
-  const user = getU(c.req.header('X-Session-Id')||'')
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
+
   const { amount, address } = await c.req.json()
   const amt = parseFloat(amount)
-  if (!amt || amt < MIN_WITHDRAW_AMT) return c.json({ error:'MIN_WITHDRAW' }, 400)
-  if (amt > user.balance)             return c.json({ error:'INSUFFICIENT' }, 400)
+  if (!amt || amt < MIN_WITHDRAW_AMT)  return c.json({ error:'MIN_WITHDRAW' }, 400)
+  if (amt > user.balance)              return c.json({ error:'INSUFFICIENT' }, 400)
   if (!address || address.length < 10) return c.json({ error:'INVALID_ADDR' }, 400)
-  // 어뷰징 방지: 누적 베팅액 >= 입금액 * 0.5 이상이어야 출금 가능
-  const minBetRequired = user.totalDeposit * 0.5
-  if (user.totalBetAmount < minBetRequired) return c.json({ error:'BET_REQUIREMENT', required: minBetRequired, current: user.totalBetAmount }, 400)
-  // 펜딩 출금 중복 방지
-  const pending = [...withdrawRequests.values()].find(w => w.userId===user.id && w.status==='pending')
+
+  // 베팅 조건 확인
+  const minBetRequired = user.total_deposit * 0.5
+  if (user.total_bet_amount < minBetRequired)
+    return c.json({ error:'BET_REQUIREMENT', required: minBetRequired, current: user.total_bet_amount }, 400)
+
+  // 중복 출금 신청 확인
+  const pending = await c.env.DB.prepare("SELECT id FROM withdraw_requests WHERE user_id=? AND status='pending'").bind(user.id).first()
   if (pending) return c.json({ error:'WITHDRAW_PENDING' }, 400)
 
-  const req: WithdrawRequest = { id:uid(), userId:user.id, username:user.username, amount:amt, address, status:'pending', createdAt:Date.now(), processedAt:null, txHash:null, note:'' }
-  withdrawRequests.set(req.id, req)
-  user.balance -= amt
-  return c.json({ success:true, balance:user.balance, requestId:req.id })
+  const reqId = uid()
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET balance=balance-? WHERE id=?').bind(amt, user.id),
+    c.env.DB.prepare('INSERT INTO withdraw_requests (id,user_id,username,amount,address,status,created_at) VALUES (?,?,?,?,?,?,?)').bind(reqId, user.id, user.username, amt, address, 'pending', Date.now())
+  ])
+
+  const updated = await getUser(c.env.DB, user.id)
+  return c.json({ success:true, balance: updated?.balance || 0, requestId: reqId })
 })
 
 app.get('/api/withdraw/status', async (c) => {
-  const user = getU(c.req.header('X-Session-Id')||'')
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
-  const myRequests = [...withdrawRequests.values()].filter(w => w.userId===user.id).sort((a,b)=>b.createdAt-a.createdAt).slice(0,10)
-  return c.json({ requests: myRequests })
+  const reqs = await c.env.DB.prepare('SELECT * FROM withdraw_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 10').bind(user.id).all<any>()
+  return c.json({ requests: reqs.results || [] })
 })
 
 // ─────────────────────────────────────────────
@@ -374,69 +382,187 @@ app.get('/api/withdraw/status', async (c) => {
 // ─────────────────────────────────────────────
 app.get('/api/round/current', async (c) => {
   const { phase, timeLeft, idx } = getPhase()
-  const round = await ensureRound(idx)
-  return c.json({ id:round.id, phase, status:phase==='betting'?'betting':'finished', timeLeft, serverSeedHash:round.serverSeedHash, blockHeight:round.blockHeight, totalOdd:round.totalOdd, totalEven:round.totalEven, betCount:round.bets.length, result:round.result, hashValue:round.hashValue, serverSeed:phase==='result'?round.serverSeed:null, recentBets:round.bets.slice(-10).map(b=>({ username:b.username.substring(0,2)+'**', choice:b.choice, amount:b.amount, timestamp:b.timestamp })) })
+  const round = await ensureRound(c.env.DB, idx)
+  if (!round) return c.json({ error:'ROUND_ERROR' }, 500)
+
+  const bets = await c.env.DB.prepare('SELECT username, choice, amount, created_at FROM bets WHERE round_id=? ORDER BY created_at DESC LIMIT 10').bind(round.id).all<any>()
+
+  return c.json({
+    id: round.id, phase, status: phase === 'betting' ? 'betting' : 'finished',
+    timeLeft, serverSeedHash: round.server_seed_hash, blockHeight: round.block_height,
+    totalOdd: round.total_odd, totalEven: round.total_even, betCount: round.bet_count,
+    result: round.result, hashValue: round.hash_value,
+    serverSeed: phase === 'result' ? round.server_seed : null,
+    recentBets: (bets.results||[]).map((b:any) => ({
+      username: b.username.substring(0,2)+'**', choice: b.choice,
+      amount: b.amount, timestamp: b.created_at
+    }))
+  })
 })
 
 app.post('/api/bet', async (c) => {
-  const user = getU(c.req.header('X-Session-Id')||'')
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
-  if (user.isBanned) return c.json({ error:'BANNED' }, 403)
+  if (user.is_banned) return c.json({ error:'BANNED' }, 403)
+
   const { phase, idx } = getPhase()
   if (phase !== 'betting') return c.json({ error:'NOT_BETTING' }, 400)
-  const round = await ensureRound(idx)
+
+  const round = await ensureRound(c.env.DB, idx)
+  if (!round) return c.json({ error:'ROUND_ERROR' }, 500)
+
   const { choice, amount } = await c.req.json()
-  if (choice!=='odd'&&choice!=='even') return c.json({ error:'INVALID_CHOICE' }, 400)
+  if (choice !== 'odd' && choice !== 'even') return c.json({ error:'INVALID_CHOICE' }, 400)
+
   const amt = parseFloat(amount)
-  if (!amt || amt < MIN_BET)   return c.json({ error:'MIN_BET' }, 400)
-  if (amt > MAX_BET)           return c.json({ error:'MAX_BET' }, 400)
-  if (amt > user.balance)      return c.json({ error:'INSUFFICIENT' }, 400)
-  if (round.bets.find(b=>b.userId===user.id)) return c.json({ error:'ALREADY_BET' }, 400)
-  user.balance = Math.round((user.balance - amt)*100)/100
-  const bet: Bet = { userId:user.id, username:user.username, choice, amount:amt, timestamp:Date.now() }
-  round.bets.push(bet)
-  if (choice==='odd') round.totalOdd  = Math.round((round.totalOdd+amt)*100)/100
-  else                round.totalEven = Math.round((round.totalEven+amt)*100)/100
-  return c.json({ success:true, balance:user.balance, bet:{ choice, amount:amt, roundId:round.id, serverSeedHash:round.serverSeedHash } })
+  if (!amt || amt < MIN_BET)  return c.json({ error:'MIN_BET' }, 400)
+  if (amt > MAX_BET)          return c.json({ error:'MAX_BET' }, 400)
+  if (amt > user.balance)     return c.json({ error:'INSUFFICIENT' }, 400)
+
+  // 중복 베팅 확인
+  const alreadyBet = await c.env.DB.prepare('SELECT id FROM bets WHERE round_id=? AND user_id=?').bind(round.id, user.id).first()
+  if (alreadyBet) return c.json({ error:'ALREADY_BET' }, 400)
+
+  const betId = uid()
+  const now   = Date.now()
+  const oddAdd  = choice === 'odd'  ? amt : 0
+  const evenAdd = choice === 'even' ? amt : 0
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET balance=balance-? WHERE id=?').bind(amt, user.id),
+    c.env.DB.prepare('INSERT INTO bets (id,round_id,user_id,username,choice,amount,created_at) VALUES (?,?,?,?,?,?,?)').bind(betId, round.id, user.id, user.username, choice, amt, now),
+    c.env.DB.prepare('UPDATE rounds SET total_odd=total_odd+?, total_even=total_even+?, bet_count=bet_count+1 WHERE id=?').bind(oddAdd, evenAdd, round.id)
+  ])
+
+  const updated = await getUser(c.env.DB, user.id)
+  return c.json({ success:true, balance: updated?.balance || 0, bet:{ choice, amount:amt, roundId:round.id, serverSeedHash:round.server_seed_hash } })
 })
 
 // ─────────────────────────────────────────────
 // API: 히스토리 & 통계
 // ─────────────────────────────────────────────
 app.get('/api/history', async (c) => {
-  return c.json({ history:gameHistory.slice(0,30), stats:{ totalGames:gameHistory.length, oddWins:gameHistory.filter(h=>h.result==='odd').length, evenWins:gameHistory.filter(h=>h.result==='even').length, totalBetAmount:totalBetAmountGlobal, totalPayoutAmount:totalPayoutAmountGlobal, totalReferralPaid, userCount:users.size } })
+  const history = await c.env.DB.prepare(`
+    SELECT r.id as roundId, r.result, r.hash_value as hashValue, r.block_height as blockHeight,
+           r.total_odd+r.total_even as totalBets, r.total_payout as totalPayout,
+           r.created_at as timestamp, r.server_seed as serverSeed
+    FROM rounds r WHERE r.settled=1 ORDER BY r.id DESC LIMIT 30
+  `).all<any>()
+
+  const stats = await c.env.DB.prepare(`
+    SELECT
+      COUNT(*) as totalGames,
+      SUM(CASE WHEN result='odd' THEN 1 ELSE 0 END) as oddWins,
+      SUM(CASE WHEN result='even' THEN 1 ELSE 0 END) as evenWins,
+      (SELECT COALESCE(SUM(amount),0) FROM bets) as totalBetAmount,
+      (SELECT COALESCE(SUM(payout),0) FROM bets) as totalPayoutAmount,
+      (SELECT COALESCE(SUM(referral_earnings),0) FROM users) as totalReferralPaid,
+      (SELECT COUNT(*) FROM users) as userCount
+    FROM rounds WHERE settled=1
+  `).first<any>()
+
+  return c.json({ history: history.results || [], stats: stats || {} })
 })
 
 app.get('/api/stats', async (c) => {
-  const total=gameHistory.length, odd=gameHistory.filter(h=>h.result==='odd').length, even=total-odd
-  return c.json({ totalGames:total, oddCount:odd, evenCount:even, oddRate:total>0?((odd/total)*100).toFixed(2):'50.00', evenRate:total>0?((even/total)*100).toFixed(2):'50.00', totalBetAmount:totalBetAmountGlobal, totalPayoutAmount:totalPayoutAmountGlobal, totalReferralPaid, userCount:users.size })
+  const stats = await c.env.DB.prepare(`
+    SELECT
+      COUNT(*) as totalGames,
+      SUM(CASE WHEN result='odd' THEN 1 ELSE 0 END) as oddCount,
+      SUM(CASE WHEN result='even' THEN 1 ELSE 0 END) as evenCount,
+      (SELECT COALESCE(SUM(amount),0) FROM bets) as totalBetAmount,
+      (SELECT COALESCE(SUM(payout),0) FROM bets) as totalPayoutAmount,
+      (SELECT COALESCE(SUM(referral_earnings),0) FROM users) as totalReferralPaid,
+      (SELECT COUNT(*) FROM users) as userCount
+    FROM rounds WHERE settled=1
+  `).first<any>()
+
+  const total    = stats?.totalGames || 0
+  const odd      = stats?.oddCount   || 0
+  const even     = stats?.evenCount  || 0
+
+  return c.json({
+    totalGames: total, oddCount: odd, evenCount: even,
+    oddRate:  total > 0 ? ((odd/total)*100).toFixed(2)  : '50.00',
+    evenRate: total > 0 ? ((even/total)*100).toFixed(2) : '50.00',
+    totalBetAmount:    stats?.totalBetAmount    || 0,
+    totalPayoutAmount: stats?.totalPayoutAmount || 0,
+    totalReferralPaid: stats?.totalReferralPaid || 0,
+    userCount: stats?.userCount || 0
+  })
 })
 
 app.get('/api/feed', async (c) => {
-  return c.json({ recentBets:allBetHistory.slice(0,20).map(b=>({ username:b.username.substring(0,2)+'**', choice:b.choice, amount:b.amount, win:b.win, payout:b.payout, roundId:b.roundId, timestamp:b.timestamp })) })
+  const bets = await c.env.DB.prepare(`
+    SELECT b.username, b.choice, b.amount, b.win, b.payout, b.round_id as roundId, b.created_at as timestamp
+    FROM bets b WHERE b.settled=1 ORDER BY b.created_at DESC LIMIT 20
+  `).all<any>()
+
+  return c.json({ recentBets: (bets.results||[]).map((b:any) => ({
+    username: b.username.substring(0,2)+'**', choice:b.choice,
+    amount:b.amount, win:!!b.win, payout:b.payout, roundId:b.roundId, timestamp:b.timestamp
+  }))})
 })
 
 // ─────────────────────────────────────────────
 // API: 마이페이지
 // ─────────────────────────────────────────────
 app.get('/api/mypage', async (c) => {
-  const user = getU(c.req.header('X-Session-Id')||'')
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
-  const myBets = allBetHistory.filter(b => b.userId===user.id).slice(0,50)
-  const wins   = myBets.filter(b=>b.win).length
-  const losses = myBets.filter(b=>!b.win).length
-  const totalWagered = myBets.reduce((s,b)=>s+b.amount,0)
-  const totalWon     = myBets.filter(b=>b.win).reduce((s,b)=>s+b.payout,0)
-  return c.json({ bets:myBets, stats:{ totalGames:myBets.length, wins, losses, winRate:myBets.length>0?((wins/myBets.length)*100).toFixed(1):'0', totalWagered, totalWon, netProfit:totalWon-totalWagered, referralEarnings:user.referralEarnings } })
+
+  const bets = await c.env.DB.prepare(`
+    SELECT b.*, r.result FROM bets b
+    JOIN rounds r ON b.round_id = r.id
+    WHERE b.user_id=? AND b.settled=1
+    ORDER BY b.created_at DESC LIMIT 50
+  `).bind(user.id).all<any>()
+
+  const myBets = bets.results || []
+  const wins   = myBets.filter((b:any) => b.win).length
+  const total  = myBets.length
+  const totalWagered = myBets.reduce((s:number, b:any) => s + b.amount, 0)
+  const totalWon     = myBets.filter((b:any) => b.win).reduce((s:number, b:any) => s + b.payout, 0)
+
+  return c.json({
+    bets: myBets.map((b:any) => ({
+      roundId: b.round_id, choice: b.choice, result: b.result,
+      amount: b.amount, win: !!b.win, payout: b.payout, timestamp: b.created_at
+    })),
+    stats: {
+      totalGames: total, wins, losses: total - wins,
+      winRate: total > 0 ? ((wins/total)*100).toFixed(1) : '0',
+      totalWagered: r2(totalWagered), totalWon: r2(totalWon),
+      netProfit: r2(totalWon - totalWagered),
+      referralEarnings: user.referral_earnings
+    }
+  })
 })
 
 // ─────────────────────────────────────────────
 // API: 추천
 // ─────────────────────────────────────────────
 app.get('/api/referral', async (c) => {
-  const user = getU(c.req.header('X-Session-Id')||'')
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
-  return c.json({ referralCode:user.referralCode, referralEarnings:user.referralEarnings, level1:{ count:user.level1Referrals.length, rate:'2.5%', users:user.level1Referrals.map(id=>{const u=users.get(id);return u?{username:u.username.substring(0,2)+'**',joinedAt:u.createdAt}:null}).filter(Boolean) }, level2:{ count:user.level2Referrals.length, rate:'1.0%' } })
+
+  const l1 = await c.env.DB.prepare(`
+    SELECT u.username, u.created_at FROM referrals r
+    JOIN users u ON r.referee_id = u.id
+    WHERE r.referrer_id=? AND r.level=1 ORDER BY r.created_at DESC
+  `).bind(user.id).all<any>()
+
+  const l2cnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM referrals WHERE referrer_id=? AND level=2').bind(user.id).first<{cnt:number}>()
+
+  return c.json({
+    referralCode: user.referral_code,
+    referralEarnings: user.referral_earnings,
+    level1: {
+      count: l1.results?.length || 0, rate:'2.5%',
+      users: (l1.results||[]).map((u:any) => ({ username: u.username.substring(0,2)+'**', joinedAt: u.created_at }))
+    },
+    level2: { count: l2cnt?.cnt || 0, rate:'1.0%' }
+  })
 })
 
 // ─────────────────────────────────────────────
@@ -445,89 +571,125 @@ app.get('/api/referral', async (c) => {
 app.post('/api/verify', async (c) => {
   const { serverSeed, blockHeight, userSeeds } = await c.req.json()
   const hash = await sha256(serverSeed + blockHeight + (userSeeds||''))
-  return c.json({ hash, result:isOdd(hash)?'odd':'even', lastChar:hash[hash.length-1] })
+  return c.json({ hash, result: isOdd(hash) ? 'odd' : 'even', lastChar: hash[hash.length-1] })
 })
 
 // ─────────────────────────────────────────────
 // API: 관리자
 // ─────────────────────────────────────────────
-function isAdmin(sid: string): boolean {
-  const user = getU(sid)
-  return !!(user && user.isAdmin)
+async function checkAdmin(db: D1Database, sid: string): Promise<boolean> {
+  const user = await getUserBySid(db, sid)
+  return !!(user && user.is_admin)
 }
 
 app.get('/api/admin/stats', async (c) => {
-  if (!isAdmin(c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const pendingWithdraws = [...withdrawRequests.values()].filter(w=>w.status==='pending')
-  const totalUsers = users.size
-  const activeToday = [...users.values()].filter(u=>Date.now()-u.createdAt < 86400000).length
-  return c.json({ totalUsers, activeToday, totalBetAmount:totalBetAmountGlobal, totalPayoutAmount:totalPayoutAmountGlobal, totalReferralPaid, houseProfit: Math.max(0, totalBetAmountGlobal - totalPayoutAmountGlobal - totalReferralPaid), pendingWithdrawCount:pendingWithdraws.length, pendingWithdrawAmount:pendingWithdraws.reduce((s,w)=>s+w.amount,0), totalGames:gameHistory.length })
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+
+  const stats = await c.env.DB.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM users) as totalUsers,
+      (SELECT COALESCE(SUM(amount),0) FROM bets) as totalBetAmount,
+      (SELECT COALESCE(SUM(payout),0) FROM bets) as totalPayoutAmount,
+      (SELECT COALESCE(SUM(referral_earnings),0) FROM users) as totalReferralPaid,
+      (SELECT COUNT(*) FROM withdraw_requests WHERE status='pending') as pendingWithdrawCount,
+      (SELECT COALESCE(SUM(amount),0) FROM withdraw_requests WHERE status='pending') as pendingWithdrawAmount,
+      (SELECT COUNT(*) FROM rounds WHERE settled=1) as totalGames
+  `).first<any>()
+
+  const houseProfit = r2((stats?.totalBetAmount||0) - (stats?.totalPayoutAmount||0) - (stats?.totalReferralPaid||0))
+
+  return c.json({ ...stats, houseProfit })
 })
 
 app.get('/api/admin/withdraws', async (c) => {
-  if (!isAdmin(c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const list = [...withdrawRequests.values()].sort((a,b)=>b.createdAt-a.createdAt).slice(0,50)
-  return c.json({ requests: list })
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const reqs = await c.env.DB.prepare('SELECT * FROM withdraw_requests ORDER BY created_at DESC LIMIT 50').all<any>()
+  return c.json({ requests: reqs.results || [] })
 })
 
 app.post('/api/admin/withdraw/approve', async (c) => {
-  if (!isAdmin(c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
   const { requestId, txHash } = await c.req.json()
-  const req = withdrawRequests.get(requestId)
+  const req = await c.env.DB.prepare('SELECT * FROM withdraw_requests WHERE id=?').bind(requestId).first<any>()
   if (!req) return c.json({ error:'NOT_FOUND' }, 404)
   if (req.status !== 'pending') return c.json({ error:'ALREADY_PROCESSED' }, 400)
-  req.status = 'approved'; req.processedAt = Date.now(); req.txHash = txHash || 'TX_'+uid()
-  const user = users.get(req.userId)
-  if (user) user.totalWithdraw += req.amount
+
+  const finalTx = txHash || 'TX_'+uid()
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE withdraw_requests SET status='approved', processed_at=?, tx_hash=? WHERE id=?").bind(Date.now(), finalTx, requestId),
+    c.env.DB.prepare('UPDATE users SET total_withdraw=total_withdraw+? WHERE id=?').bind(req.amount, req.user_id)
+  ])
   return c.json({ success:true })
 })
 
 app.post('/api/admin/withdraw/reject', async (c) => {
-  if (!isAdmin(c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
   const { requestId, note } = await c.req.json()
-  const req = withdrawRequests.get(requestId)
+  const req = await c.env.DB.prepare('SELECT * FROM withdraw_requests WHERE id=?').bind(requestId).first<any>()
   if (!req) return c.json({ error:'NOT_FOUND' }, 404)
   if (req.status !== 'pending') return c.json({ error:'ALREADY_PROCESSED' }, 400)
-  req.status = 'rejected'; req.processedAt = Date.now(); req.note = note || ''
-  // 잔액 환불
-  const user = users.get(req.userId)
-  if (user) user.balance += req.amount
+
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE withdraw_requests SET status='rejected', processed_at=?, note=? WHERE id=?").bind(Date.now(), note||'', requestId),
+    c.env.DB.prepare('UPDATE users SET balance=balance+? WHERE id=?').bind(req.amount, req.user_id)
+  ])
   return c.json({ success:true })
 })
 
 app.get('/api/admin/users', async (c) => {
-  if (!isAdmin(c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const list = [...users.values()].sort((a,b)=>b.createdAt-a.createdAt).map(u=>({ id:u.id, username:u.username, balance:u.balance, totalDeposit:u.totalDeposit, totalWithdraw:u.totalWithdraw, totalBetAmount:u.totalBetAmount, referralEarnings:u.referralEarnings, isAdmin:u.isAdmin, isBanned:u.isBanned, createdAt:u.createdAt, lastIp:u.lastIp, loginCount:u.loginCount }))
-  return c.json({ users: list })
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const users = await c.env.DB.prepare(`
+    SELECT id, username, balance, total_deposit, total_withdraw, total_bet_amount,
+           referral_earnings, is_admin, is_banned, created_at, last_ip, login_count
+    FROM users ORDER BY created_at DESC
+  `).all<any>()
+  return c.json({ users: (users.results||[]).map((u:any) => ({
+    id: u.id, username: u.username, balance: u.balance,
+    totalDeposit: u.total_deposit, totalWithdraw: u.total_withdraw,
+    totalBetAmount: u.total_bet_amount, referralEarnings: u.referral_earnings,
+    isAdmin: !!u.is_admin, isBanned: !!u.is_banned,
+    createdAt: u.created_at, lastIp: u.last_ip, loginCount: u.login_count
+  }))})
 })
 
 app.post('/api/admin/user/balance', async (c) => {
-  if (!isAdmin(c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const { userId, amount, type } = await c.req.json() // type: 'add'|'set'
-  const user = users.get(userId)
-  if (!user) return c.json({ error:'NOT_FOUND' }, 404)
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { userId, amount, type } = await c.req.json()
   const amt = parseFloat(amount)
-  if (type === 'set') { user.balance = amt; user.totalDeposit += amt }
-  else { user.balance += amt; user.totalDeposit += amt }
-  depositLogs.unshift({ id:uid(), userId:user.id, username:user.username, amount:amt, txHash:'ADMIN_'+uid(), createdAt:Date.now() })
-  return c.json({ success:true, balance:user.balance })
+  if (!amt) return c.json({ error:'INVALID_AMOUNT' }, 400)
+
+  const logId = uid()
+  if (type === 'set') {
+    await c.env.DB.batch([
+      c.env.DB.prepare('UPDATE users SET balance=? WHERE id=?').bind(amt, userId),
+      c.env.DB.prepare('INSERT INTO deposit_logs (id,user_id,username,amount,tx_hash,created_at) SELECT ?,id,username,?,?,? FROM users WHERE id=?').bind(logId, amt, 'ADMIN_SET_'+uid(), Date.now(), userId)
+    ])
+  } else {
+    await c.env.DB.batch([
+      c.env.DB.prepare('UPDATE users SET balance=balance+?, total_deposit=total_deposit+? WHERE id=?').bind(amt, amt, userId),
+      c.env.DB.prepare('INSERT INTO deposit_logs (id,user_id,username,amount,tx_hash,created_at) SELECT ?,id,username,?,?,? FROM users WHERE id=?').bind(logId, amt, 'ADMIN_ADD_'+uid(), Date.now(), userId)
+    ])
+  }
+  const updated = await getUser(c.env.DB, userId)
+  return c.json({ success:true, balance: updated?.balance || 0 })
 })
 
 app.post('/api/admin/user/ban', async (c) => {
-  if (!isAdmin(c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
   const { userId, ban } = await c.req.json()
-  const user = users.get(userId)
-  if (!user) return c.json({ error:'NOT_FOUND' }, 404)
-  user.isBanned = !!ban
+  await c.env.DB.prepare('UPDATE users SET is_banned=? WHERE id=?').bind(ban ? 1 : 0, userId).run()
   return c.json({ success:true })
 })
 
 app.get('/api/admin/deposits', async (c) => {
-  if (!isAdmin(c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  return c.json({ deposits: depositLogs.slice(0,50) })
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const logs = await c.env.DB.prepare('SELECT * FROM deposit_logs ORDER BY created_at DESC LIMIT 50').all<any>()
+  return c.json({ deposits: logs.results || [] })
 })
 
-
+// ─────────────────────────────────────────────
+// 정적/기본 라우트
+// ─────────────────────────────────────────────
 app.get('*', (c) => c.html(HTML))
 
 const HTML = `<!DOCTYPE html>
@@ -566,9 +728,9 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
 .ring-even{box-shadow:0 0 24px rgba(49,130,206,.35)}
 .wallet-card{background:linear-gradient(135deg,rgba(38,161,123,.15),rgba(38,161,123,.05));border:1px solid rgba(38,161,123,.3)}
 .admin-card{background:linear-gradient(135deg,rgba(255,165,0,.1),rgba(255,165,0,.05));border:1px solid rgba(255,165,0,.3)}
-.status-pending{color:#f6ad55;background:rgba(246,173,85,.1);border:1px solid rgba(246,173,85,.3)}
-.status-approved{color:#68d391;background:rgba(104,211,145,.1);border:1px solid rgba(104,211,145,.3)}
-.status-rejected{color:#fc8181;background:rgba(252,129,129,.1);border:1px solid rgba(252,129,129,.3)}
+.status-pending{color:#f6ad55;background:rgba(246,173,85,.1);border:1px solid rgba(246,173,85,.3);padding:1px 8px;border-radius:99px}
+.status-approved{color:#68d391;background:rgba(104,211,145,.1);border:1px solid rgba(104,211,145,.3);padding:1px 8px;border-radius:99px}
+.status-rejected{color:#fc8181;background:rgba(252,129,129,.1);border:1px solid rgba(252,129,129,.3);padding:1px 8px;border-radius:99px}
 </style>
 </head>
 <body class="text-white">
@@ -610,8 +772,8 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
 <nav class="border-b border-white/10 bg-black/30 overflow-x-auto">
   <div class="max-w-6xl mx-auto px-3 flex whitespace-nowrap">
     <button onclick="showTab('game')"      id="t-game"      class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_game">🎲 게임</button>
-    <button onclick="showTab('mypage')"    id="t-mypage"    class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_mypage">👤 마이페이지</button>
-    <button onclick="showTab('wallet')"    id="t-wallet"    class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_wallet">💰 지갑</button>
+    <button onclick="showTab('mypage')"    id="t-mypage"    class="tab-off hidden px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_mypage">👤 마이페이지</button>
+    <button onclick="showTab('wallet')"    id="t-wallet"    class="tab-off hidden px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_wallet">💰 지갑</button>
     <button onclick="showTab('dashboard')" id="t-dashboard" class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_dashboard">📊 투명성</button>
     <button onclick="showTab('referral')"  id="t-referral"  class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_referral">👥 추천수당</button>
     <button onclick="showTab('verify')"    id="t-verify"    class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_verify">🔍 검증</button>
@@ -627,7 +789,6 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
 <div id="p-game" class="hidden">
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
     <div class="lg:col-span-2 space-y-4">
-      <!-- 라운드 카드 -->
       <div class="glass rounded-2xl p-5">
         <div class="flex items-start justify-between mb-3">
           <div>
@@ -658,7 +819,6 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
           <div class="text-xs text-gray-500 mt-1" data-i18n="seed_desc">베팅 전에 봉인 — 수학적으로 조작 불가</div>
         </div>
       </div>
-      <!-- 베팅 -->
       <div class="glass rounded-2xl p-5">
         <div class="grid grid-cols-2 gap-3 mb-4">
           <div class="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-center">
@@ -705,7 +865,6 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
         </div>
       </div>
     </div>
-    <!-- 사이드 -->
     <div class="space-y-4">
       <div class="glass rounded-2xl p-4">
         <div class="text-sm font-bold text-gray-300 mb-2" data-i18n="my_info">💼 내 정보</div>
@@ -801,7 +960,6 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
         <div class="bg-black/20 rounded-xl p-3"><div class="text-xs text-gray-400 mb-1" data-i18n="total_bet_amount">누적 베팅</div><div class="font-bold text-blue-400 text-sm" id="wTotalBet">0 USDT</div></div>
       </div>
     </div>
-    <!-- 입금 -->
     <div class="glass rounded-2xl p-5">
       <div class="font-bold mb-3 text-green-400" data-i18n="deposit_title">📥 USDT 입금</div>
       <div class="bg-black/30 border border-green-500/30 rounded-xl p-4 mb-3">
@@ -811,7 +969,7 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
       </div>
       <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-xs text-yellow-400 mb-3">
         <i class="fas fa-exclamation-triangle mr-1"></i>
-        <span data-i18n="deposit_warning">반드시 TRC20(TRON) 네트워크로 입금하세요. 다른 네트워크 입금 시 손실됩니다.</span>
+        <span data-i18n="deposit_warning">반드시 TRC20(TRON) 네트워크로 입금하세요.</span>
       </div>
       <div class="border-t border-white/10 pt-3">
         <div class="text-xs text-gray-400 mb-2" data-i18n="demo_deposit">🧪 데모 입금 (테스트용)</div>
@@ -822,12 +980,11 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
         </div>
       </div>
     </div>
-    <!-- 출금 -->
     <div class="glass rounded-2xl p-5">
       <div class="font-bold mb-3 text-red-400" data-i18n="withdraw_title">📤 USDT 출금</div>
       <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300 mb-3">
         <i class="fas fa-info-circle mr-1"></i>
-        <span data-i18n="withdraw_condition">출금 조건: 입금액의 50% 이상 베팅 필요 / 이미 처리 중인 출금 없을 것</span>
+        <span data-i18n="withdraw_condition">출금 조건: 입금액의 50% 이상 베팅 필요</span>
       </div>
       <div class="mb-2">
         <div class="flex justify-between text-xs mb-1">
@@ -851,21 +1008,12 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
         <button onclick="doWithdraw()" class="w-full py-3 bg-red-600 hover:bg-red-700 rounded-xl font-bold transition text-sm" data-i18n="withdraw_btn">출금 신청</button>
       </div>
     </div>
-    <!-- 본사 보관 안내 -->
-    <div class="glass rounded-2xl p-5">
-      <div class="font-bold mb-3" data-i18n="house_wallet_title">🏦 본사 USDT 보관 방법</div>
-      <div class="space-y-2 text-sm">
-        <div class="flex items-start gap-3 p-3 bg-black/20 rounded-xl"><span class="text-2xl">🔐</span><div><div class="font-bold text-green-400 text-xs mb-0.5" data-i18n="hw1_title">하드웨어 지갑 (Ledger)</div><div class="text-gray-400 text-xs" data-i18n="hw1_desc">대규모 장기 보관 — 오프라인 보안 최강</div></div></div>
-        <div class="flex items-start gap-3 p-3 bg-black/20 rounded-xl"><span class="text-2xl">🏪</span><div><div class="font-bold text-yellow-400 text-xs mb-0.5" data-i18n="hw2_title">거래소 지갑 (Binance/OKX)</div><div class="text-gray-400 text-xs" data-i18n="hw2_desc">운영 자금 보관 — 빠른 출금 처리용</div></div></div>
-        <div class="flex items-start gap-3 p-3 bg-black/20 rounded-xl"><span class="text-2xl">🔑</span><div><div class="font-bold text-blue-400 text-xs mb-0.5" data-i18n="hw3_title">멀티시그 지갑</div><div class="text-gray-400 text-xs" data-i18n="hw3_desc">2/3 서명 필요 — 단독 인출 불가 최고 보안</div></div></div>
-      </div>
-    </div>
   </div>
 </div>
 
 <!-- ══ 투명성 탭 ══ -->
 <div id="p-dashboard" class="hidden">
-  <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="dash_title">📊 투명성 대시보드</h2><p class="text-gray-400 text-sm" data-i18n="dash_desc">모든 데이터 실시간 공개 — 숨기는 것 없음</p></div>
+  <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="dash_title">📊 투명성 대시보드</h2><p class="text-gray-400 text-sm" data-i18n="dash_desc">모든 데이터 실시간 공개</p></div>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="glass rounded-xl p-3 text-center"><div class="text-2xl font-black text-blue-400" id="dTotalGames">0</div><div class="text-xs text-gray-400 mt-1" data-i18n="total_games">총 게임</div></div>
     <div class="glass rounded-xl p-3 text-center"><div class="text-2xl font-black text-green-400" id="dUserRate">-</div><div class="text-xs text-gray-400 mt-1" data-i18n="user_rate">유저 수익률</div></div>
@@ -958,9 +1106,9 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
   <div class="glass rounded-xl p-4 mb-4">
     <div class="font-bold mb-3 text-sm" data-i18n="system_title">🔐 하이브리드 공정성 시스템</div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-      <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3"><div class="text-blue-400 font-bold mb-1 text-xs" data-i18n="v1_title">① 서버 시드</div><div class="text-xs text-gray-400" data-i18n="v1_desc">라운드 전 SHA256 해시 공개. 종료 후 원본 공개→변조 불가 증명.</div></div>
-      <div class="bg-green-500/10 border border-green-500/20 rounded-xl p-3"><div class="text-green-400 font-bold mb-1 text-xs" data-i18n="v2_title">② 유저 시드</div><div class="text-xs text-gray-400" data-i18n="v2_desc">참여자 ID 합산. 본사가 사전에 알 수 없어 조작 원천 차단.</div></div>
-      <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3"><div class="text-yellow-400 font-bold mb-1 text-xs" data-i18n="v3_title">③ 블록 높이</div><div class="text-xs text-gray-400" data-i18n="v3_desc">비트코인 블록높이 추가 난수 소스. 외부 검증 가능.</div></div>
+      <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3"><div class="text-blue-400 font-bold mb-1 text-xs" data-i18n="v1_title">① 서버 시드</div><div class="text-xs text-gray-400" data-i18n="v1_desc">라운드 전 SHA256 해시 공개.</div></div>
+      <div class="bg-green-500/10 border border-green-500/20 rounded-xl p-3"><div class="text-green-400 font-bold mb-1 text-xs" data-i18n="v2_title">② 유저 시드</div><div class="text-xs text-gray-400" data-i18n="v2_desc">참여자 ID 합산. 조작 원천 차단.</div></div>
+      <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3"><div class="text-yellow-400 font-bold mb-1 text-xs" data-i18n="v3_title">③ 블록 높이</div><div class="text-xs text-gray-400" data-i18n="v3_desc">비트코인 블록높이 추가 난수 소스.</div></div>
     </div>
     <div class="bg-black/30 rounded-xl p-3 text-xs mono">
       <div class="text-gray-400 mb-1" data-i18n="formula">공식:</div>
@@ -1034,14 +1182,12 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
 <!-- ══ 관리자 탭 ══ -->
 <div id="p-admin" class="hidden">
   <div class="mb-4"><h2 class="text-xl font-black mb-1 text-yellow-400">⚙️ 관리자 페이지</h2></div>
-  <!-- 핵심 통계 -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-yellow-400" id="adTotalUsers">0</div><div class="text-xs text-gray-400 mt-1">전체 유저</div></div>
     <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-green-400" id="adTotalBet">0</div><div class="text-xs text-gray-400 mt-1">총 베팅(USDT)</div></div>
     <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-red-400" id="adPendingWd">0</div><div class="text-xs text-gray-400 mt-1">대기 출금</div></div>
-    <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-blue-400" id="adPendingAmt">0</div><div class="text-xs text-gray-400 mt-1">출금 대기액(USDT)</div></div>
+    <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-blue-400" id="adPendingAmt">0</div><div class="text-xs text-gray-400 mt-1">출금 대기액</div></div>
   </div>
-  <!-- 출금 관리 -->
   <div class="glass rounded-xl p-4 mb-4">
     <div class="flex items-center justify-between mb-3">
       <div class="font-bold text-sm text-yellow-400">📤 출금 요청 관리</div>
@@ -1049,7 +1195,6 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
     </div>
     <div id="adWithdrawList" class="space-y-2"><div class="text-xs text-gray-500 text-center py-3">로딩 중...</div></div>
   </div>
-  <!-- 유저 관리 -->
   <div class="glass rounded-xl p-4 mb-4">
     <div class="flex items-center justify-between mb-3">
       <div class="font-bold text-sm text-yellow-400">👤 유저 관리</div>
@@ -1058,18 +1203,14 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
     <div class="overflow-x-auto">
       <table class="w-full text-xs">
         <thead><tr class="text-gray-400 border-b border-white/10 text-left">
-          <th class="py-1.5 px-2">아이디</th>
-          <th class="py-1.5 px-2 text-right">잔액</th>
-          <th class="py-1.5 px-2 text-right">총입금</th>
-          <th class="py-1.5 px-2 text-right">총베팅</th>
-          <th class="py-1.5 px-2">상태</th>
-          <th class="py-1.5 px-2">관리</th>
+          <th class="py-1.5 px-2">아이디</th><th class="py-1.5 px-2 text-right">잔액</th>
+          <th class="py-1.5 px-2 text-right">총입금</th><th class="py-1.5 px-2 text-right">총베팅</th>
+          <th class="py-1.5 px-2">상태</th><th class="py-1.5 px-2">관리</th>
         </tr></thead>
         <tbody id="adUserTable"><tr><td colspan="6" class="text-center text-gray-500 py-3">로딩 중...</td></tr></tbody>
       </table>
     </div>
   </div>
-  <!-- 잔액 조정 모달 -->
   <div id="adBalModal" class="hidden glass rounded-xl p-4 mb-4 border border-yellow-500/30">
     <div class="font-bold text-sm text-yellow-400 mb-3">💰 잔액 조정</div>
     <div class="space-y-2">
@@ -1082,7 +1223,7 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
       <div class="flex gap-2">
         <button onclick="adminAdjBal('add')" class="flex-1 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-xs font-bold transition">+ 추가</button>
         <button onclick="adminAdjBal('set')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">= 설정</button>
-        <button onclick="$('adBalModal').classList.add('hidden')" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition">취소</button>
+        <button onclick="document.getElementById('adBalModal').classList.add('hidden')" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition">취소</button>
       </div>
     </div>
   </div>
@@ -1090,11 +1231,9 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
 
 </main>
 
-<!-- 토스트 -->
 <div id="toast" class="fixed bottom-5 right-4 z-50 hidden max-w-xs w-full px-2">
   <div id="toastMsg" class="glass rounded-xl px-4 py-3 text-sm font-bold shadow-2xl slide"></div>
 </div>
-
 
 <script src="/static/app.js"></script>
 </body>
