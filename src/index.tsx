@@ -459,7 +459,7 @@ app.post('/api/withdraw', async (c) => {
   const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
 
-  const { amount, address } = await c.req.json()
+  const { amount, address, network } = await c.req.json()
   const cfg = await getGameSettings(c.env.DB)
   const amt = parseFloat(amount)
   // 실제 차감액 = 요청금액 + 수수료
@@ -478,9 +478,10 @@ app.post('/api/withdraw', async (c) => {
   if (pending) return c.json({ error:'WITHDRAW_PENDING' }, 400)
 
   const reqId = uid()
+  const netVal = network || 'trc20'
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE users SET balance=balance-? WHERE id=?').bind(totalDeduct, user.id),
-    c.env.DB.prepare('INSERT INTO withdraw_requests (id,user_id,username,amount,address,status,created_at) VALUES (?,?,?,?,?,?,?)').bind(reqId, user.id, user.username, amt, address, 'pending', Date.now())
+    c.env.DB.prepare('INSERT INTO withdraw_requests (id,user_id,username,amount,address,status,created_at,note) VALUES (?,?,?,?,?,?,?,?)').bind(reqId, user.id, user.username, amt, address, 'pending', Date.now(), 'network:'+netVal)
   ])
 
   const updated = await getUser(c.env.DB, user.id)
@@ -624,9 +625,23 @@ app.get('/api/stats', async (c) => {
     FROM rounds WHERE settled=1
   `).first<any>()
 
-  const total    = stats?.totalGames || 0
-  const odd      = stats?.oddCount   || 0
-  const even     = stats?.evenCount  || 0
+  // 최근 50라운드 결과 (공정성 지표용)
+  const recent50 = await c.env.DB.prepare(
+    'SELECT id, result FROM rounds WHERE settled=1 ORDER BY id DESC LIMIT 50'
+  ).all<any>()
+  const results50 = (recent50.results || []).map((r:any) => r.result).reverse()
+
+  // 연속 결과 계산
+  let maxStreak = 0, curStreak = 1
+  for (let i = 1; i < results50.length; i++) {
+    if (results50[i] === results50[i-1]) { curStreak++; maxStreak = Math.max(maxStreak, curStreak) }
+    else curStreak = 1
+  }
+  if (results50.length > 0) maxStreak = Math.max(maxStreak, 1)
+
+  const total = stats?.totalGames || 0
+  const odd   = stats?.oddCount   || 0
+  const even  = stats?.evenCount  || 0
 
   return c.json({
     totalGames: total, oddCount: odd, evenCount: even,
@@ -635,7 +650,9 @@ app.get('/api/stats', async (c) => {
     totalBetAmount:    stats?.totalBetAmount    || 0,
     totalPayoutAmount: stats?.totalPayoutAmount || 0,
     totalReferralPaid: stats?.totalReferralPaid || 0,
-    userCount: stats?.userCount || 0
+    userCount: stats?.userCount || 0,
+    recent50Results: results50,
+    maxStreak
   })
 })
 
@@ -915,20 +932,52 @@ app.get('/api/inquiry/:id', async (c) => {
   return c.json({ inquiry: inq })
 })
 
+// 유저 재문의 (추가 답변 요청)
+app.post('/api/inquiry/followup', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+  const { inquiryId, content } = await c.req.json()
+  if (!content || content.trim().length === 0) return c.json({ error:'EMPTY_CONTENT' }, 400)
+  const inq = await c.env.DB.prepare('SELECT * FROM inquiries WHERE id=? AND user_id=?').bind(inquiryId, user.id).first<any>()
+  if (!inq) return c.json({ error:'NOT_FOUND' }, 404)
+  const now = Date.now()
+  // 재문의: 원문의 content에 추가 답변 내용을 append하고 status를 pending으로 되돌림
+  const appendedContent = inq.content + `<hr><div class="followup-msg"><div class="text-xs text-gray-400 mb-1">📩 추가 문의 (${new Date(now).toLocaleDateString('ko-KR')})</div>${content}</div>`
+  await c.env.DB.prepare(
+    'UPDATE inquiries SET content=?, status="pending", updated_at=? WHERE id=?'
+  ).bind(appendedContent, now, inquiryId).run()
+  return c.json({ success: true })
+})
+
 app.get('/api/admin/inquiries', async (c) => {
   if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const status = c.req.query('status') || ''
-  const page   = parseInt(c.req.query('page') || '1')
-  const limit  = 20
-  const offset = (page - 1) * limit
-  const rows   = status
-    ? await c.env.DB.prepare('SELECT * FROM inquiries WHERE status=? ORDER BY created_at DESC LIMIT ? OFFSET ?').bind(status, limit, offset).all<any>()
-    : await c.env.DB.prepare('SELECT * FROM inquiries ORDER BY created_at DESC LIMIT ? OFFSET ?').bind(limit, offset).all<any>()
-  const total  = status
-    ? await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM inquiries WHERE status=?').bind(status).first<{cnt:number}>()
-    : await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM inquiries').first<{cnt:number}>()
+  const status   = c.req.query('status')   || ''
+  const category = c.req.query('category') || ''
+  const page     = parseInt(c.req.query('page') || '1')
+  const limit    = 20
+  const offset   = (page - 1) * limit
+
+  const conds: string[] = [], params: any[] = []
+  if (status)   { conds.push('status=?');   params.push(status) }
+  if (category) { conds.push('category=?'); params.push(category) }
+  const where = conds.length ? ' WHERE ' + conds.join(' AND ') : ''
+
+  const rows = await c.env.DB.prepare(`SELECT * FROM inquiries${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).bind(...params, limit, offset).all<any>()
+  const total = await c.env.DB.prepare(`SELECT COUNT(*) as cnt FROM inquiries${where}`).bind(...params).first<{cnt:number}>()
   const pendingCnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM inquiries WHERE status="pending"').first<{cnt:number}>()
-  return c.json({ inquiries: rows.results || [], total: total?.cnt || 0, totalPages: Math.ceil((total?.cnt||0)/limit), pendingCount: pendingCnt?.cnt || 0 })
+
+  // 카테고리별 대기 건수
+  const catCounts = await c.env.DB.prepare(
+    `SELECT category, COUNT(*) as cnt FROM inquiries WHERE status='pending' GROUP BY category`
+  ).all<any>()
+
+  return c.json({
+    inquiries: rows.results || [],
+    total: total?.cnt || 0,
+    totalPages: Math.ceil((total?.cnt||0)/limit),
+    pendingCount: pendingCnt?.cnt || 0,
+    categoryCounts: Object.fromEntries((catCounts.results||[]).map((r:any) => [r.category, r.cnt]))
+  })
 })
 
 app.post('/api/admin/inquiry/reply', async (c) => {
@@ -1100,8 +1149,27 @@ app.get('/api/admin/stats', async (c) => {
 
 app.get('/api/admin/withdraws', async (c) => {
   if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const reqs = await c.env.DB.prepare('SELECT * FROM withdraw_requests ORDER BY created_at DESC LIMIT 50').all<any>()
-  return c.json({ requests: reqs.results || [] })
+  const status  = c.req.query('status') || ''   // pending | approved | rejected | all
+  const search  = c.req.query('search') || ''
+  const page    = Math.max(1, parseInt(c.req.query('page') || '1'))
+  const plimit  = 20
+  const poffset = (page - 1) * plimit
+
+  let query = 'SELECT * FROM withdraw_requests'
+  const conds: string[] = [], params: any[] = []
+  if (status && status !== 'all') { conds.push("status=?"); params.push(status) }
+  if (search) { conds.push("username LIKE ?"); params.push('%'+search+'%') }
+  if (conds.length) query += ' WHERE ' + conds.join(' AND ')
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  params.push(plimit, poffset)
+
+  let cntQuery = 'SELECT COUNT(*) as cnt FROM withdraw_requests'
+  const cntParams = params.slice(0, -2)
+  if (conds.length) cntQuery += ' WHERE ' + conds.join(' AND ')
+
+  const reqs    = await c.env.DB.prepare(query).bind(...params).all<any>()
+  const cntRow  = await c.env.DB.prepare(cntQuery).bind(...cntParams).first<{cnt:number}>()
+  return c.json({ requests: reqs.results || [], total: cntRow?.cnt||0, totalPages: Math.ceil((cntRow?.cnt||0)/plimit), page })
 })
 
 app.post('/api/admin/withdraw/approve', async (c) => {
@@ -1551,7 +1619,7 @@ select option{background:#1a1a2e;color:#fff}
           </div>
           <div class="text-right">
             <div class="text-xs text-gray-400" data-i18n="payout">배당</div>
-            <div class="text-2xl font-black text-green-400">1.90x</div>
+            <div class="text-2xl font-black text-green-400" id="gPayoutDisplay">1.90x</div>
             <div class="badge-usdt">USDT</div>
           </div>
         </div>
@@ -1584,7 +1652,12 @@ select option{background:#1a1a2e;color:#fff}
           <div class="mb-3">
             <label class="text-xs text-gray-400 block mb-1.5" data-i18n="bet_amount_label">베팅 금액 (USDT, 최소 0.1)</label>
             <input type="number" id="betAmt" placeholder="0.00 USDT" min="0.1" max="1000" step="0.1"
+              oninput="updatePayoutPreview()"
               class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-lg font-black focus:outline-none focus:border-green-400 placeholder-gray-600">
+            <!-- 예상 수령액 미리보기 -->
+            <div id="payoutPreview" class="hidden mt-1.5 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg text-xs text-green-400 font-bold">
+              예상 수령액: <span id="payoutPreviewAmt">0.00</span> USDT
+            </div>
             <div class="flex gap-1.5 mt-2 flex-wrap">
               <button onclick="addBet(1)"   class="px-2 py-1 text-xs bg-white/10 rounded-lg hover:bg-white/20 transition">+1</button>
               <button onclick="addBet(5)"   class="px-2 py-1 text-xs bg-white/10 rounded-lg hover:bg-white/20 transition">+5</button>
@@ -1763,8 +1836,22 @@ select option{background:#1a1a2e;color:#fff}
           <div id="wBetBar" class="h-2 rounded-full bg-blue-500 transition-all" style="width:0%"></div>
         </div>
       </div>
+      <!-- 출금 네트워크 선택 -->
+      <div class="mb-3">
+        <div class="text-xs text-gray-400 mb-1.5">출금 네트워크 선택</div>
+        <div class="flex gap-2 flex-wrap">
+          <button onclick="selectWdNetwork('trc20')" id="wdNet-trc20"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold border border-green-500/40 bg-green-500/10 text-green-400 transition wdnet-btn">TRC20 (TRON)</button>
+          <button onclick="selectWdNetwork('erc20')" id="wdNet-erc20"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold border border-white/20 bg-white/5 text-gray-400 hover:bg-white/10 transition wdnet-btn">ERC20 (ETH)</button>
+          <button onclick="selectWdNetwork('bep20')" id="wdNet-bep20"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold border border-white/20 bg-white/5 text-gray-400 hover:bg-white/10 transition wdnet-btn">BEP20 (BSC)</button>
+        </div>
+        <!-- 네트워크별 주소 형식 안내 -->
+        <div id="wdNetGuide" class="mt-1.5 text-xs text-gray-500 bg-white/5 rounded-lg px-3 py-2 hidden"></div>
+      </div>
       <div class="space-y-3 mt-3">
-        <div><label class="text-xs text-gray-400 block mb-1" data-i18n="withdraw_addr">출금 주소 (TRC20)</label><input type="text" id="wdAddr" placeholder="T..." class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-sm mono focus:outline-none focus:border-red-400"></div>
+        <div><label class="text-xs text-gray-400 block mb-1" id="wdAddrLabel">출금 주소 (TRC20)</label><input type="text" id="wdAddr" placeholder="T..." class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-sm mono focus:outline-none focus:border-red-400"></div>
         <div><label class="text-xs text-gray-400 block mb-1" data-i18n="withdraw_amount">출금 금액 (USDT, 최소 1)</label>
           <div class="flex gap-2">
             <input type="number" id="wdAmt" placeholder="0.00" min="1" step="0.01" class="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-red-400">
@@ -1821,6 +1908,41 @@ select option{background:#1a1a2e;color:#fff}
     <div class="font-bold mb-3 text-sm">📈 홀/짝 분포 차트</div>
     <div class="flex items-center justify-center">
       <canvas id="oddEvenChart" width="220" height="220" style="max-width:220px"></canvas>
+    </div>
+  </div>
+
+  <!-- 최근 50라운드 바 차트 + 연속 결과 -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm">🎯 최근 50라운드 공정성 지표</div>
+      <div class="text-xs text-gray-500">실시간 업데이트</div>
+    </div>
+    <!-- 연속 결과 통계 -->
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-center">
+        <div class="text-xs text-gray-400 mb-1">최대 연속 홀</div>
+        <div class="text-2xl font-black text-red-400" id="dMaxOddStreak">-</div>
+        <div class="text-xs text-gray-500">연속</div>
+      </div>
+      <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-center">
+        <div class="text-xs text-gray-400 mb-1">최대 연속 짝</div>
+        <div class="text-2xl font-black text-blue-400" id="dMaxEvenStreak">-</div>
+        <div class="text-xs text-gray-500">연속</div>
+      </div>
+    </div>
+    <div class="mb-2">
+      <div class="flex justify-between text-xs mb-1">
+        <span class="text-gray-400">최근 50라운드 결과</span>
+        <span id="dStreak50Info" class="text-gray-500"></span>
+      </div>
+      <!-- 50라운드 바 차트 -->
+      <div id="dRecent50Bar" class="flex flex-wrap gap-0.5"></div>
+    </div>
+    <!-- 최대 연속 강조 -->
+    <div class="mt-3 p-2 bg-white/5 rounded-lg text-xs text-center">
+      <span class="text-gray-400">전체 최대 연속 동일 결과: </span>
+      <span id="dMaxStreakAll" class="text-yellow-400 font-black text-base">-</span>
+      <span class="text-gray-400"> 연속</span>
     </div>
   </div>
   <div class="glass rounded-xl p-4">
@@ -2042,9 +2164,29 @@ select option{background:#1a1a2e;color:#fff}
   <div class="glass rounded-xl p-4 mb-4">
     <div class="flex items-center justify-between mb-3">
       <div class="font-bold text-sm text-yellow-400">📤 출금 요청 관리</div>
-      <button onclick="loadAdminWithdraws()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄 새로고침</button>
+      <div class="flex gap-2">
+        <button onclick="exportCSV('withdraws')" class="px-3 py-1 bg-green-600/20 text-green-400 rounded-lg text-xs hover:bg-green-600/40 transition">📥 CSV</button>
+        <button onclick="loadAdminWithdraws()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄 새로고침</button>
+      </div>
+    </div>
+    <!-- 출금 필터 + 검색 -->
+    <div class="flex flex-wrap gap-2 mb-3">
+      <div class="flex gap-1">
+        <button onclick="setWdFilter('all')"      id="wdF-all"      class="px-2 py-1 rounded text-xs bg-white/20 text-white font-bold transition">전체</button>
+        <button onclick="setWdFilter('pending')"   id="wdF-pending"  class="px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition">대기중</button>
+        <button onclick="setWdFilter('approved')"  id="wdF-approved" class="px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition">승인</button>
+        <button onclick="setWdFilter('rejected')"  id="wdF-rejected" class="px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition">거절</button>
+      </div>
+      <input type="text" id="wdSearchInput" placeholder="유저명 검색..." oninput="loadAdminWithdraws(1)"
+        class="flex-1 min-w-0 bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-yellow-400">
     </div>
     <div id="adWithdrawList" class="space-y-2"><div class="text-xs text-gray-500 text-center py-3">로딩 중...</div></div>
+    <!-- 페이지네이션 -->
+    <div class="flex items-center justify-center gap-2 mt-2" id="wdPagination">
+      <button onclick="loadAdminWithdraws(currentWdPage-1)" id="wdPrevBtn" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition disabled:opacity-30" disabled>◀</button>
+      <span class="text-xs text-gray-400" id="wdPageInfo">1 / 1</span>
+      <button onclick="loadAdminWithdraws(currentWdPage+1)" id="wdNextBtn" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition disabled:opacity-30" disabled>▶</button>
+    </div>
   </div>
   <div class="glass rounded-xl p-4 mb-4">
     <div class="flex items-center justify-between mb-3">
@@ -2052,6 +2194,7 @@ select option{background:#1a1a2e;color:#fff}
       <div class="flex gap-2">
         <input type="text" id="userSearchInput" placeholder="아이디/IP 검색..." oninput="loadAdminUsers(1)" class="bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-yellow-400 w-32">
         <button onclick="loadAdminUsers(1)" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄</button>
+        <button onclick="exportCSV('users')" class="px-3 py-1 bg-green-600/20 text-green-400 rounded-lg text-xs hover:bg-green-600/40 transition">📥 CSV</button>
       </div>
     </div>
     <div class="overflow-x-auto">
@@ -2218,7 +2361,10 @@ select option{background:#1a1a2e;color:#fff}
   <div class="glass rounded-xl p-4 mb-4">
     <div class="flex items-center justify-between mb-3">
       <div class="font-bold text-sm text-green-400">💵 수동 입금 처리</div>
-      <button onclick="loadAdminDepositLogs()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄 내역</button>
+      <div class="flex gap-2">
+        <button onclick="loadAdminDepositLogs()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄 내역</button>
+        <button onclick="exportCSV('deposits')" class="px-3 py-1 bg-green-600/20 text-green-400 rounded-lg text-xs hover:bg-green-600/40 transition">📥 CSV</button>
+      </div>
     </div>
     <div class="bg-green-500/10 border border-green-500/20 rounded-xl p-3 mb-3 text-xs text-green-300">
       유저 아이디와 입금액을 입력하면 해당 유저의 잔액에 즉시 반영됩니다. TX Hash를 함께 입력하면 입금 내역에 기록됩니다.
@@ -2318,6 +2464,15 @@ select option{background:#1a1a2e;color:#fff}
         <button onclick="loadAdminInquiries('pending')" class="px-2 py-1 bg-orange-500/20 text-orange-300 rounded text-xs hover:bg-orange-500/30 transition">미답변</button>
         <button onclick="loadAdminInquiries('')" class="px-2 py-1 bg-white/10 rounded text-xs hover:bg-white/20 transition">전체</button>
       </div>
+    </div>
+    <!-- 카테고리 필터 탭 -->
+    <div class="flex flex-wrap gap-1 mb-3" id="inqCategoryTabs">
+      <button onclick="filterInquiryCategory('')" id="inqCat-all" class="px-2 py-1 rounded text-xs bg-white/20 text-white font-bold transition">전체</button>
+      <button onclick="filterInquiryCategory('deposit')" id="inqCat-deposit" class="px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition">입금 <span id="inqCatCnt-deposit" class="text-orange-400"></span></button>
+      <button onclick="filterInquiryCategory('withdraw')" id="inqCat-withdraw" class="px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition">출금 <span id="inqCatCnt-withdraw" class="text-orange-400"></span></button>
+      <button onclick="filterInquiryCategory('game')" id="inqCat-game" class="px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition">게임 <span id="inqCatCnt-game" class="text-orange-400"></span></button>
+      <button onclick="filterInquiryCategory('account')" id="inqCat-account" class="px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition">계정 <span id="inqCatCnt-account" class="text-orange-400"></span></button>
+      <button onclick="filterInquiryCategory('other')" id="inqCat-other" class="px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition">기타 <span id="inqCatCnt-other" class="text-orange-400"></span></button>
     </div>
     <div id="adInquiryList" class="space-y-2"><div class="text-xs text-gray-500 text-center py-3">로딩 중...</div></div>
     <!-- 답변 모달 -->
@@ -2469,6 +2624,17 @@ select option{background:#1a1a2e;color:#fff}
       <button id="noticeSkipToday" class="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs transition">오늘 하루 보지 않기</button>
       <button id="noticePopupClose" onclick="$('noticePopupModal').classList.add('hidden')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-xl text-xs font-bold transition">확인</button>
     </div>
+  </div>
+</div>
+
+<!-- 파트너 수익 내역 모달 -->
+<div id="partnerEarningsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.7)">
+  <div class="glass rounded-2xl p-5 w-full max-w-lg border border-yellow-500/30 max-h-[85vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-3">
+      <div id="partnerEarningsTitle" class="font-bold text-yellow-400">📊 파트너 수익 내역</div>
+      <button onclick="$('partnerEarningsModal').classList.add('hidden')" class="text-gray-400 hover:text-white text-xl">✕</button>
+    </div>
+    <div id="partnerEarningsBody"></div>
   </div>
 </div>
 

@@ -407,6 +407,7 @@ let sid = localStorage.getItem('sid') || ''
 let me = null
 let lastRoundId = -1
 let myBet = null
+let currentPayout = 1.90  // 게임 배당률 (동적 업데이트)
 
 const $ = id => document.getElementById(id)
 const fmtU = n => (Math.round(n * 100) / 100).toFixed(2)
@@ -620,14 +621,27 @@ async function refreshMe() {
   updateUI()
 }
 
-function addBet(n) { const el=$('betAmt'); el.value = Math.round((parseFloat(el.value||0)+n)*100)/100 }
-function clearBet() { $('betAmt').value = '' }
-function maxBet()  { if (me) $('betAmt').value = Math.min(me.balance, 1000) }
+function addBet(n) { const el=$('betAmt'); el.value = Math.round((parseFloat(el.value||0)+n)*100)/100; updatePayoutPreview() }
+function clearBet() { $('betAmt').value = ''; updatePayoutPreview() }
+function maxBet()  { if (me) { $('betAmt').value = Math.min(me.balance, 1000); updatePayoutPreview() } }
+
+// 예상 수령액 미리보기
+function updatePayoutPreview() {
+  const amt = parseFloat($('betAmt')?.value || 0)
+  const previewEl = $('payoutPreview')
+  const amtEl = $('payoutPreviewAmt')
+  if (!previewEl || !amtEl) return
+  if (!amt || amt <= 0) { previewEl.classList.add('hidden'); return }
+  const payout = Math.round(amt * currentPayout * 100) / 100
+  amtEl.textContent = fmtU(payout)
+  previewEl.classList.remove('hidden')
+}
 // 1/4, 1/2 비율 베팅
 function fracBet(frac) {
   if (!me) return
   const val = Math.round(Math.min(me.balance, 1000) * frac * 100) / 100
   $('betAmt').value = val > 0 ? val : ''
+  updatePayoutPreview()
 }
 
 async function doBet(choice) {
@@ -910,6 +924,59 @@ function setMaxWd() {
   if (me) $('wdAmt').value = Math.max(0, me.balance - 1).toFixed(2)  // 수수료 1 USDT 자동 차감
 }
 
+// 출금 네트워크 선택
+let currentWdNetwork = 'trc20'
+const wdNetworkInfo = {
+  trc20: {
+    label: '출금 주소 (TRC20 - TRON)',
+    placeholder: 'T로 시작하는 34자리 주소 (예: TXxxx...)',
+    guide: '🟢 TRC20 (TRON): T로 시작하는 34자리 주소 | 수수료 최저 | 예) TRX7NMhVDU7YBo5GH5eSb9d...',
+    guideColor: 'text-green-400'
+  },
+  erc20: {
+    label: '출금 주소 (ERC20 - Ethereum)',
+    placeholder: '0x로 시작하는 42자리 주소 (예: 0x1234...)',
+    guide: '🔵 ERC20 (ETH): 0x로 시작하는 42자리 주소 | 가스비 높음 | 예) 0x742d35Cc6634C0532...',
+    guideColor: 'text-blue-400'
+  },
+  bep20: {
+    label: '출금 주소 (BEP20 - BSC)',
+    placeholder: '0x로 시작하는 42자리 주소 (예: 0x1234...)',
+    guide: '🟡 BEP20 (BSC): 0x로 시작하는 42자리 주소 | 수수료 저렴 | 예) 0x742d35Cc6634C0532...',
+    guideColor: 'text-yellow-400'
+  }
+}
+
+function selectWdNetwork(net) {
+  currentWdNetwork = net
+  const info = wdNetworkInfo[net]
+  if (!info) return
+
+  // 버튼 스타일
+  document.querySelectorAll('.wdnet-btn').forEach(btn => {
+    btn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border border-white/20 bg-white/5 text-gray-400 hover:bg-white/10 transition wdnet-btn'
+  })
+  const activeBtn = $('wdNet-' + net)
+  if (activeBtn) {
+    const colors = { trc20:'border-green-500/40 bg-green-500/10 text-green-400', erc20:'border-blue-500/40 bg-blue-500/10 text-blue-400', bep20:'border-yellow-500/40 bg-yellow-500/10 text-yellow-400' }
+    activeBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold border transition wdnet-btn ' + (colors[net]||'')
+  }
+
+  // 주소 라벨 + 플레이스홀더 업데이트
+  const labelEl = $('wdAddrLabel')
+  const addrEl  = $('wdAddr')
+  if (labelEl) labelEl.textContent = info.label
+  if (addrEl)  { addrEl.placeholder = info.placeholder; addrEl.value = '' }
+
+  // 안내 메시지
+  const guideEl = $('wdNetGuide')
+  if (guideEl) {
+    guideEl.textContent = info.guide
+    guideEl.className = 'mt-1.5 text-xs bg-white/5 rounded-lg px-3 py-2 ' + info.guideColor
+    guideEl.classList.remove('hidden')
+  }
+}
+
 async function demoDeposit() {
   const amt = parseFloat($('demoDepAmt').value) || 10
   const data = await api('/api/deposit/demo', { method:'POST', body: JSON.stringify({amount: amt}) })
@@ -923,8 +990,9 @@ async function demoDeposit() {
 async function doWithdraw() {
   const address = $('wdAddr').value.trim()
   const amount  = parseFloat($('wdAmt').value)
+  const network = currentWdNetwork || 'trc20'
   $('wdErr').classList.add('hidden'); $('wdOk').classList.add('hidden')
-  const data = await api('/api/withdraw', { method:'POST', body: JSON.stringify({address, amount}) })
+  const data = await api('/api/withdraw', { method:'POST', body: JSON.stringify({address, amount, network}) })
   if (data.error) {
     let msg = errMap(data.error)
     if (data.error === 'BET_REQUIREMENT') msg += ` (${fmtU(data.current||0)}/${fmtU(data.required||0)} USDT)`
@@ -1037,6 +1105,39 @@ async function loadDashboard(page) {
         }
       }
     })
+  }
+
+  // ─── 최근 50라운드 공정성 지표 ───
+  if (data.recent50Results && data.recent50Results.length > 0) {
+    const r50 = data.recent50Results
+    const barEl = $('dRecent50Bar')
+    if (barEl) {
+      barEl.innerHTML = r50.map((res, i) =>
+        `<div title="${i+1}번 (${res==='odd'?'홀':'짝'})"
+          class="w-4 h-6 rounded-sm flex items-center justify-center text-xs font-black cursor-default
+          ${res==='odd'?'bg-red-500/40 text-red-300':'bg-blue-500/40 text-blue-300'}">
+          ${res==='odd'?'홀':'짝'}
+        </div>`
+      ).join('')
+    }
+
+    // 연속별 계산 (홀/짝 각각)
+    let maxOddStreak = 0, maxEvenStreak = 0
+    let curOdd = 0, curEven = 0
+    r50.forEach(res => {
+      if (res === 'odd') { curOdd++; curEven = 0; maxOddStreak = Math.max(maxOddStreak, curOdd) }
+      else { curEven++; curOdd = 0; maxEvenStreak = Math.max(maxEvenStreak, curEven) }
+    })
+
+    if ($('dMaxOddStreak'))  $('dMaxOddStreak').textContent  = maxOddStreak
+    if ($('dMaxEvenStreak')) $('dMaxEvenStreak').textContent = maxEvenStreak
+    if ($('dMaxStreakAll'))  $('dMaxStreakAll').textContent  = data.maxStreak || Math.max(maxOddStreak, maxEvenStreak)
+
+    // 50라운드 내 홀/짝 비율
+    const r50Odd  = r50.filter(r => r==='odd').length
+    const r50Even = r50.length - r50Odd
+    const infoEl = $('dStreak50Info')
+    if (infoEl) infoEl.textContent = `홀 ${r50Odd}번 / 짝 ${r50Even}번`
   }
 
   // 히스토리 테이블 (페이지네이션)
@@ -1263,8 +1364,34 @@ function renderAdminCharts(data) {
   }
 }
 
-async function loadAdminWithdraws() {
-  const data = await api('/api/admin/withdraws')
+let currentWdFilter = 'all'
+let currentWdPage = 1
+let wdTotalPages = 1
+
+function setWdFilter(status) {
+  currentWdFilter = status
+  // 버튼 스타일 업데이트
+  ;['all','pending','approved','rejected'].forEach(s => {
+    const btn = $('wdF-' + s)
+    if (!btn) return
+    btn.className = s === status
+      ? 'px-2 py-1 rounded text-xs bg-white/20 text-white font-bold transition'
+      : 'px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition'
+  })
+  loadAdminWithdraws(1)
+}
+
+async function loadAdminWithdraws(page) {
+  page = page || currentWdPage
+  if (page < 1 || page > wdTotalPages) return
+  currentWdPage = page
+
+  const search = $('wdSearchInput')?.value.trim() || ''
+  const params = new URLSearchParams({ page: String(page) })
+  if (currentWdFilter && currentWdFilter !== 'all') params.set('status', currentWdFilter)
+  if (search) params.set('search', search)
+
+  const data = await api('/api/admin/withdraws?' + params.toString())
   const el = $('adWithdrawList')
   if (!el || !data.requests) return
   if (data.requests.length === 0) {
@@ -1299,6 +1426,14 @@ async function loadAdminWithdraws() {
           </div>
         </div>` : ''}
     </div>`).join('')
+
+  // 페이지네이션 업데이트
+  wdTotalPages = data.totalPages || 1
+  const pageInfo = $('wdPageInfo')
+  if (pageInfo) pageInfo.textContent = currentWdPage + ' / ' + wdTotalPages
+  const prevBtn = $('wdPrevBtn'), nextBtn = $('wdNextBtn')
+  if (prevBtn) prevBtn.disabled = currentWdPage <= 1
+  if (nextBtn) nextBtn.disabled = currentWdPage >= wdTotalPages
 }
 
 async function adminApprove(id) {
@@ -1628,10 +1763,27 @@ async function openUserDetail(userId) {
       <button onclick="adminBan('${u.id}',${!u.isBanned})" class="flex-1 py-2 ${u.isBanned?'bg-green-600/30 hover:bg-green-600/50':'bg-red-600/30 hover:bg-red-600/50'} rounded-lg text-xs font-bold transition">${u.isBanned?'✅ 차단 해제':'🚫 차단'}</button>
       <button onclick="$('userDetailModal').classList.add('hidden')" class="flex-1 py-2 bg-gray-600/30 hover:bg-gray-600/50 rounded-lg text-xs font-bold transition">닫기</button>
     </div>
+
+    <!-- 관리자 메모 편집 -->
+    <div class="mt-3 p-3 bg-white/5 rounded-xl border border-white/10">
+      <div class="text-xs font-bold text-yellow-400 mb-2">📝 관리자 메모</div>
+      <textarea id="adminMemoInput" rows="2"
+        class="w-full bg-black/30 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"
+        placeholder="메모를 입력하세요...">${u.adminMemo||''}</textarea>
+      <button onclick="saveAdminMemo('${u.id}')" class="mt-1.5 w-full py-1.5 bg-yellow-600/30 hover:bg-yellow-600/50 rounded-lg text-xs font-bold transition">💾 메모 저장</button>
+    </div>
   `
 }
+
+// 관리자 메모 저장
+async function saveAdminMemo(userId) {
+  const memo = $('adminMemoInput')?.value || ''
+  const data = await api('/api/admin/user/memo', { method:'POST', body: JSON.stringify({userId, memo}) })
+  if (data.success) toast('✅ 메모가 저장되었습니다', 'text-green-400')
+  else toast('❌ 메모 저장 실패: ' + (data.error||'오류'), 'text-red-400')
+}
+
 async function loadNotices() {
-  const data = await api('/api/notices?lang=' + (localStorage.getItem('lang') || 'ko'))
   const banner = $('noticeBanner')
   const list   = $('noticeList')
   if (!banner || !list) return
@@ -1812,11 +1964,59 @@ async function loadAdminPartners() {
         <div class="text-blue-400 break-all mono text-xs">${origin}?partner=${p.code}</div>
         <button onclick="copyText('${origin}?partner=${p.code}')" class="mt-1 px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded text-xs hover:bg-blue-600/30 transition">📋 링크 복사</button>
       </div>
+      <div class="mt-1.5 flex gap-1">
+        <button onclick="togglePartner('${p.code}',${p.is_active?0:1})" class="flex-1 py-1 bg-white/10 hover:bg-white/20 rounded text-xs transition">${p.is_active?'비활성화':'활성화'}</button>
+        <button onclick="showPartnerEarnings('${p.code}','${p.name}')" class="flex-1 py-1 bg-blue-600/20 hover:bg-blue-600/40 rounded text-xs text-blue-400 transition">📊 수익 내역</button>
+      </div>
     </div>`).join('')
 }
 
+// 파트너 수익 내역 모달
+async function showPartnerEarnings(code, name) {
+  const modal = $('partnerEarningsModal')
+  const title = $('partnerEarningsTitle')
+  const body  = $('partnerEarningsBody')
+  if (!modal || !body) return
+  if (title) title.textContent = `📊 ${name} 수익 내역`
+  body.innerHTML = '<div class="text-center py-6 text-gray-400 text-xs">로딩 중...</div>'
+  modal.classList.remove('hidden')
+
+  const data = await api('/api/admin/partner/earnings?code=' + encodeURIComponent(code) + '&limit=50')
+  if (!data.earnings) { body.innerHTML = '<div class="text-red-400 text-center py-4 text-xs">불러오기 실패</div>'; return }
+
+  if (data.earnings.length === 0) {
+    body.innerHTML = '<div class="text-gray-500 text-center py-4 text-xs">수익 내역 없음</div>'
+    return
+  }
+
+  const total = data.earnings.reduce((s, e) => s + (e.amount||0), 0)
+  body.innerHTML = `
+    <div class="mb-2 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-center">
+      <span class="text-gray-400">누적 수당: </span>
+      <span class="text-yellow-400 font-black">${fmtU(total)} USDT</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead><tr class="text-gray-500 border-b border-white/10">
+          <th class="py-1 text-left">유저</th>
+          <th class="text-right">베팅액</th>
+          <th class="text-right">수당</th>
+          <th class="text-right">시간</th>
+        </tr></thead>
+        <tbody>
+          ${data.earnings.map(e => `
+            <tr class="border-b border-white/5">
+              <td class="py-1">${e.username||'-'}</td>
+              <td class="py-1 text-right text-gray-300">${fmtU(e.bet_amount||0)}</td>
+              <td class="py-1 text-right text-yellow-400 font-bold">+${fmtU(e.amount)}</td>
+              <td class="py-1 text-right text-gray-500">${ago(e.created_at)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`
+}
+
 async function createPartner() {
-  const name  = $('pName')?.value.trim()
   const owner = $('pOwner')?.value.trim()
   const rate  = parseFloat($('pRate')?.value) / 100 || 0.05
   if (!name || !owner) { toast('❌ 파트너명과 운영자 아이디를 입력하세요', 'text-red-400'); return }
@@ -1836,6 +2036,75 @@ async function togglePartner(code, isActive) {
 
 function copyText(text) {
   navigator.clipboard.writeText(text).then(() => toast('📋 ' + t('copied'), 'text-blue-400'))
+}
+
+// ═══════════════════════════════════════════════
+// CSV 내보내기
+// ═══════════════════════════════════════════════
+async function exportCSV(type) {
+  toast('⏳ CSV 생성 중...', 'text-blue-400')
+  let rows = [], headers = [], filename = ''
+
+  if (type === 'users') {
+    const data = await api('/api/admin/users?page=1&limit=9999')
+    // 전체 목록은 페이지 반복으로 수집
+    let allUsers = data.users || []
+    const totalPages = data.totalPages || 1
+    for (let p = 2; p <= Math.min(totalPages, 50); p++) {
+      const d2 = await api('/api/admin/users?page=' + p)
+      if (d2.users) allUsers = allUsers.concat(d2.users)
+    }
+    headers = ['아이디','잔액','총입금','총출금','총베팅','추천수당','관리자','차단','가입일','최근IP','로그인수']
+    rows = allUsers.map(u => [
+      u.username, fmtU(u.balance), fmtU(u.totalDeposit), fmtU(u.totalWithdraw),
+      fmtU(u.totalBetAmount), fmtU(u.referralEarnings),
+      u.isAdmin ? 'Y' : 'N', u.isBanned ? 'Y' : 'N',
+      new Date(u.createdAt).toLocaleDateString('ko-KR'),
+      u.lastIp || '-', u.loginCount
+    ])
+    filename = 'users_' + new Date().toISOString().slice(0,10) + '.csv'
+  } else if (type === 'deposits') {
+    const data = await api('/api/admin/deposits')
+    const deposits = data.deposits || []
+    headers = ['아이디','유저명','금액(USDT)','TX Hash','네트워크','메모','일시']
+    rows = deposits.map(d => [
+      d.user_id||d.userId, d.username, fmtU(d.amount),
+      d.tx_hash||d.txHash||'-', d.network||'manual', d.memo||'-',
+      new Date(d.created_at||d.createdAt).toLocaleString('ko-KR')
+    ])
+    filename = 'deposits_' + new Date().toISOString().slice(0,10) + '.csv'
+  } else if (type === 'withdraws') {
+    const data = await api('/api/admin/withdraws?page=1&status=all')
+    let allWd = data.requests || []
+    const totalPages = data.totalPages || 1
+    for (let p = 2; p <= Math.min(totalPages, 50); p++) {
+      const d2 = await api('/api/admin/withdraws?page=' + p + '&status=all')
+      if (d2.requests) allWd = allWd.concat(d2.requests)
+    }
+    headers = ['유저명','금액(USDT)','주소','상태','TX Hash','메모','신청일','처리일']
+    rows = allWd.map(r => [
+      r.username, fmtU(r.amount), r.address||'-',
+      r.status, r.tx_hash||r.txHash||'-', r.note||'-',
+      new Date(r.created_at||r.createdAt).toLocaleString('ko-KR'),
+      r.processed_at ? new Date(r.processed_at).toLocaleString('ko-KR') : '-'
+    ])
+    filename = 'withdraws_' + new Date().toISOString().slice(0,10) + '.csv'
+  }
+
+  if (rows.length === 0) { toast('❌ 데이터 없음', 'text-red-400'); return }
+
+  // BOM + CSV 생성 (한글 엑셀 호환)
+  const bom = '\uFEFF'
+  const csv = bom + [headers, ...rows]
+    .map(r => r.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(','))
+    .join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+  toast('✅ ' + rows.length + '건 CSV 다운로드 완료', 'text-green-400')
 }
 
 // ═══════════════════════════════════════════════
@@ -2026,6 +2295,13 @@ async function openInquiryDetail(id) {
       <div><span class="text-gray-400 text-xs">${t('inquiry_title')}</span><div class="font-bold">${inq.title}</div></div>
       <div><span class="text-gray-400 text-xs">${t('inquiry_content')}</span><div class="bg-black/30 rounded-lg p-3 text-xs text-gray-300 inquiry-content">${cleanContent}</div>${attachHtml}</div>
       ${inq.admin_reply ? `<div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3"><div class="text-blue-400 text-xs font-bold mb-1">💬 관리자 답변</div><div class="text-sm inquiry-content">${inq.admin_reply}</div><div class="text-xs text-gray-500 mt-1">${ago(inq.admin_reply_at)}</div></div>` : ''}
+      ${inq.status !== 'closed' ? `
+        <div class="border-t border-white/10 pt-3">
+          <div class="text-xs text-gray-400 font-bold mb-2">📩 추가 문의 작성</div>
+          <textarea id="followupContent_${inq.id}" rows="3" placeholder="추가 내용을 입력하세요..."
+            class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-blue-400 resize-none mb-2"></textarea>
+          <button onclick="submitFollowup('${inq.id}')" class="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold transition">📤 추가 문의 전송</button>
+        </div>` : `<div class="text-xs text-gray-500 text-center py-2">🔒 종료된 문의입니다</div>`}
     </div>`
   modal.classList.remove('hidden')
 }
@@ -2033,6 +2309,23 @@ async function openInquiryDetail(id) {
 function closeInquiryDetail() {
   const modal = $('inqDetailModal')
   if (modal) modal.classList.add('hidden')
+}
+
+// 재문의(추가 답변) 전송
+async function submitFollowup(inquiryId) {
+  const content = $('followupContent_' + inquiryId)?.value.trim()
+  if (!content) { toast('❌ 추가 문의 내용을 입력하세요', 'text-red-400'); return }
+  const data = await api('/api/inquiry/followup', {
+    method: 'POST',
+    body: JSON.stringify({ inquiryId, content })
+  })
+  if (data.success) {
+    toast('✅ 추가 문의가 전송되었습니다', 'text-green-400')
+    closeInquiryDetail()
+    loadMyInquiries()
+  } else {
+    toast('❌ 전송 실패: ' + (data.error||'오류'), 'text-red-400')
+  }
 }
 
 async function submitInquiry() {
@@ -2072,18 +2365,50 @@ async function submitInquiry() {
 // ═══════════════════════════════════════════════
 // 1:1 문의 - 관리자
 // ═══════════════════════════════════════════════
+let currentInqStatus = ''
+let currentInqCategory = ''
+
+function filterInquiryCategory(cat) {
+  currentInqCategory = cat
+  // 카테고리 버튼 스타일 업데이트
+  ;['','deposit','withdraw','game','account','other'].forEach(c => {
+    const btn = $('inqCat-' + (c || 'all'))
+    if (!btn) return
+    btn.className = c === cat
+      ? 'px-2 py-1 rounded text-xs bg-white/20 text-white font-bold transition'
+      : 'px-2 py-1 rounded text-xs bg-white/10 text-gray-400 hover:bg-white/20 transition'
+  })
+  loadAdminInquiries(currentInqStatus)
+}
+
 async function loadAdminInquiries(status) {
-  const data = await api('/api/admin/inquiries' + (status ? '?status=' + status : ''))
+  if (status !== undefined) currentInqStatus = status
+  const params = new URLSearchParams()
+  if (currentInqStatus) params.set('status', currentInqStatus)
+  if (currentInqCategory) params.set('category', currentInqCategory)
+  const data = await api('/api/admin/inquiries?' + params.toString())
   const el = $('adInquiryList'), badge = $('adInquiryBadge')
   if (!el) return
   if (badge && data.pendingCount > 0) { badge.textContent = data.pendingCount; badge.classList.remove('hidden') }
   else if (badge) badge.classList.add('hidden')
+
+  // 카테고리별 미답변 건수 표시
+  if (data.categoryCounts) {
+    ;['deposit','withdraw','game','account','other'].forEach(cat => {
+      const el = $('inqCatCnt-' + cat)
+      if (el) {
+        const cnt = data.categoryCounts[cat] || 0
+        el.textContent = cnt > 0 ? `(${cnt})` : ''
+      }
+    })
+  }
+
   if (!data.inquiries || data.inquiries.length === 0) {
     el.innerHTML = '<div class="text-xs text-gray-500 text-center py-3">문의 없음</div>'; return
   }
   const statusCls = { pending:'text-orange-400', answered:'text-green-400', closed:'text-gray-400' }
   const statusLabel = { pending:'대기중', answered:'답변완료', closed:'종료' }
-  const catLabel = { general:'일반', deposit:'입금', withdraw:'출금', bet:'게임', referral:'추천', other:'기타' }
+  const catLabel = { general:'일반', deposit:'입금', withdraw:'출금', bet:'게임', game:'게임', referral:'추천', account:'계정', other:'기타' }
   el.innerHTML = data.inquiries.map(inq => {
     // content에서 HTML 태그 제거해서 미리보기 텍스트 생성
     const previewText = inq.content ? inq.content.replace(/<[^>]*>/g, '').substring(0, 120) + (inq.content.replace(/<[^>]*>/g,'').length > 120 ? '...' : '') : ''
@@ -2132,7 +2457,7 @@ async function openAdminInquiryDetail(id) {
     toast('❌ 문의 내용을 불러올 수 없습니다', 'text-red-400')
     return
   }
-  const catLabel = { general:'일반', deposit:'입금', withdraw:'출금', bet:'게임', referral:'추천', other:'기타' }
+  const catLabel = { general:'일반', deposit:'입금', withdraw:'출금', bet:'게임', game:'게임', referral:'추천', account:'계정', other:'기타' }
   const statusLabel = { pending:'대기중', answered:'답변완료', closed:'종료' }
   const modal = document.createElement('div')
   modal.id = 'adminInqDetailModal'
@@ -2417,6 +2742,15 @@ async function init() {
 
   updateUI()
   showTab('game')
+
+  // 게임 설정 로드 (배당률 동적 표시)
+  api('/api/game-settings').then(gs => {
+    if (gs && gs.payout) {
+      currentPayout = parseFloat(gs.payout) || 1.90
+      if ($('gPayoutDisplay')) $('gPayoutDisplay').textContent = currentPayout.toFixed(2) + 'x'
+    }
+  })
+
   loadRound()
   loadFeed()
   loadDashboard()
