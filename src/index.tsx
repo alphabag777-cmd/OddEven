@@ -1089,6 +1089,8 @@ const HTML = `<!DOCTYPE html>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Sans+SC:wght@400;700;900&family=Noto+Sans+JP:wght@400;700;900&display=swap');
 *{font-family:'Noto Sans KR','Noto Sans SC','Noto Sans JP',sans-serif}
@@ -1121,6 +1123,27 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
 .status-approved{color:#68d391;background:rgba(104,211,145,.1);border:1px solid rgba(104,211,145,.3);padding:1px 8px;border-radius:99px}
 .status-rejected{color:#fc8181;background:rgba(252,129,129,.1);border:1px solid rgba(252,129,129,.3);padding:1px 8px;border-radius:99px}
 .status-cancelled{color:#a0aec0;background:rgba(160,174,192,.1);border:1px solid rgba(160,174,192,.3);padding:1px 8px;border-radius:99px}
+/* Quill 에디터 다크 테마 */
+.ql-toolbar.ql-snow{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2)!important;border-radius:10px 10px 0 0;padding:6px 8px}
+.ql-container.ql-snow{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.2)!important;border-top:none!important;border-radius:0 0 10px 10px;color:#fff;min-height:120px}
+.ql-editor{color:#f0f0f0;font-size:14px;line-height:1.6;min-height:100px}
+.ql-editor.ql-blank::before{color:#9ca3af}
+.ql-snow .ql-stroke{stroke:#ccc!important}
+.ql-snow .ql-fill{fill:#ccc!important}
+.ql-snow .ql-picker{color:#ccc!important}
+.ql-snow .ql-picker-options{background:#2d3748!important;border:1px solid rgba(255,255,255,0.2)!important}
+.ql-snow .ql-picker-item{color:#e2e8f0!important}
+.ql-snow .ql-active .ql-stroke,.ql-snow .ql-picker-label.ql-active .ql-stroke{stroke:#63b3ed!important}
+.ql-snow .ql-active .ql-fill,.ql-snow .ql-picker-label.ql-active .ql-fill{fill:#63b3ed!important}
+.ql-toolbar.ql-snow .ql-formats{margin-right:8px}
+/* 공지 내용 렌더링 */
+.notice-content p{margin:0;line-height:1.5}
+.notice-content strong{font-weight:700}
+.notice-content em{font-style:italic}
+.notice-content a{color:#63b3ed;text-decoration:underline}
+/* 문의 내용 렌더링 */
+.inquiry-content p{margin:0 0 4px;line-height:1.5}
+.inquiry-content ul,.inquiry-content ol{padding-left:20px;margin:4px 0}
 </style>
 </head>
 <body class="text-white">
@@ -1620,21 +1643,43 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
   <!-- 공지 관리 -->
   <div class="glass rounded-xl p-4 mb-4">
     <div class="font-bold text-sm text-yellow-400 mb-3">📢 공지사항 관리</div>
-    <div class="space-y-2 mb-2">
-      <div class="flex gap-2">
-        <input type="text" id="noticeInput" placeholder="공지 내용 (한국어)" class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-yellow-400">
+    <div class="space-y-2 mb-3">
+      <div class="flex gap-2 items-center">
         <select id="noticeType" class="bg-white/10 border border-white/20 rounded-lg px-2 py-2 text-white text-xs focus:outline-none">
           <option value="info">ℹ️ 안내</option>
           <option value="warning">⚠️ 경고</option>
           <option value="danger">🚨 긴급</option>
         </select>
+        <span class="text-xs text-gray-400">한국어 작성 시 자동번역 버튼 사용 가능</span>
       </div>
-      <input type="text" id="noticeInputEn" placeholder="Notice (English, optional)" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400">
-      <div class="flex gap-2">
-        <input type="text" id="noticeInputZh" placeholder="公告 (中文, 可选)" class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400">
-        <input type="text" id="noticeInputJa" placeholder="お知らせ (日本語, 任意)" class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400">
+      <!-- Quill 에디터 (한국어) -->
+      <div>
+        <div class="text-xs text-gray-400 mb-1">🇰🇷 한국어 내용 <span class="text-yellow-400">*</span></div>
+        <div id="noticeEditorKo" style="max-height:180px;overflow-y:auto"></div>
+        <input type="hidden" id="noticeInput">
       </div>
-      <button onclick="postNotice()" class="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">등록</button>
+      <!-- 자동번역 버튼 -->
+      <button onclick="autoTranslateNotice()" class="w-full py-1.5 bg-indigo-600/50 hover:bg-indigo-600/80 border border-indigo-500/40 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1">
+        🌐 한국어 내용으로 영어·중국어·일본어 자동 채우기
+      </button>
+      <!-- Quill 에디터 (영어) -->
+      <div>
+        <div class="text-xs text-gray-400 mb-1">🇺🇸 English (선택)</div>
+        <div id="noticeEditorEn" style="max-height:120px;overflow-y:auto"></div>
+        <input type="hidden" id="noticeInputEn">
+      </div>
+      <!-- 중국어/일본어 (텍스트) -->
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <div class="text-xs text-gray-400 mb-1">🇨🇳 中文 (선택)</div>
+          <textarea id="noticeInputZh" rows="2" placeholder="公告 (中文, 可选)" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+        </div>
+        <div>
+          <div class="text-xs text-gray-400 mb-1">🇯🇵 日本語 (선택)</div>
+          <textarea id="noticeInputJa" rows="2" placeholder="お知らせ (日本語, 任意)" class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-yellow-400 resize-none"></textarea>
+        </div>
+      </div>
+      <button onclick="postNotice()" class="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">📢 공지 등록</button>
     </div>
     <div id="adNoticeList" class="space-y-1 text-xs"><div class="text-gray-500 text-center py-2">공지 없음</div></div>
   </div>
@@ -1721,7 +1766,9 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
       <div class="text-xs text-blue-400 font-bold mb-2">✏️ 답변 작성</div>
       <div class="text-xs text-gray-400 mb-2" id="adReplyTitle">-</div>
       <input type="hidden" id="adReplyInqId">
-      <textarea id="adReplyText" rows="3" placeholder="답변 내용 입력..." class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-blue-400 resize-none mb-2"></textarea>
+      <!-- Quill 에디터 (관리자 답변) -->
+      <div id="adReplyEditor" style="max-height:150px;overflow-y:auto" class="mb-2"></div>
+      <input type="hidden" id="adReplyText">
       <div class="flex gap-2">
         <button onclick="submitAdminReply()" class="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold transition">답변 등록</button>
         <button onclick="closeAdminReply()" class="px-3 py-1.5 bg-white/10 rounded-lg text-xs transition">취소</button>
@@ -1807,8 +1854,10 @@ body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh
         </div>
         <div>
           <label class="text-xs text-gray-400 block mb-1" data-i18n="inquiry_content">내용</label>
-          <textarea id="inqContent" rows="5" maxlength="2000" placeholder="문의 내용을 상세히 입력하세요 (최대 2000자)" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-400 resize-none"></textarea>
-          <div class="text-xs text-gray-500 text-right mt-0.5"><span id="inqCharCount">0</span>/2000</div>
+          <!-- Quill 에디터 -->
+          <div id="inqEditor" style="max-height:250px;overflow-y:auto"></div>
+          <input type="hidden" id="inqContent">
+          <div class="text-xs text-gray-500 text-right mt-0.5"><span id="inqCharCount">0</span> 자</div>
         </div>
         <div id="inqErr" class="hidden text-red-400 text-xs bg-red-500/10 rounded-lg p-2"></div>
         <button onclick="submitInquiry()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold transition text-sm" data-i18n="inquiry_submit">문의 제출</button>

@@ -1047,6 +1047,23 @@ async function loadAdmin() {
   loadAdminPartners()
   loadAdminInquiries('')
   loadAdminFAQs()
+
+  // 공지사항 Quill 에디터 초기화
+  setTimeout(() => {
+    initQuill('noticeEditorKo', '공지 내용을 입력하세요 (한국어)...', [
+      ['bold', 'italic', 'underline'],
+      [{ 'color': [] }],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      ['link'],
+      ['clean']
+    ])
+    initQuill('noticeEditorEn', 'Notice content (English, optional)...', [
+      ['bold', 'italic', 'underline'],
+      [{ 'color': [] }],
+      ['link'],
+      ['clean']
+    ])
+  }, 150)
 }
 
 async function loadAdminWithdraws() {
@@ -1172,8 +1189,14 @@ async function loadNotices() {
   const colorMap = { warning:'bg-yellow-500/20 border-yellow-500/40 text-yellow-300', danger:'bg-red-500/20 border-red-500/40 text-red-300', info:'bg-blue-500/20 border-blue-500/40 text-blue-300' }
   list.innerHTML = data.notices.map(n => {
     const cls = colorMap[n.type] || colorMap.info
+    const rawContent = n.displayContent || n.content
+    // HTML 태그 포함 여부 확인 후 렌더링
+    const isHtml = rawContent && rawContent.includes('<')
+    const displayText = isHtml
+      ? `<span class="notice-content text-xs font-bold">${rawContent}</span>`
+      : `<span class="text-xs font-bold">${rawContent}</span>`
     return `<div class="border-b border-white/5 last:border-0 px-4 py-2 flex items-center justify-between gap-2 ${cls}">
-      <span class="text-xs font-bold">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'} ${n.displayContent || n.content}</span>
+      <div class="flex items-center gap-1 min-w-0">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'} ${displayText}</div>
       <span class="text-xs opacity-60 shrink-0">${ago(n.created_at)}</span>
     </div>`
   }).join('')
@@ -1189,26 +1212,37 @@ async function loadAdminNotices() {
     el.innerHTML = `<div class="text-gray-500 text-center py-2 text-xs">${t('notice_empty')}</div>`
     return
   }
-  el.innerHTML = data.notices.map(n => `
-    <div class="flex items-center justify-between p-2 bg-black/20 rounded-lg">
-      <div class="flex items-center gap-2">
-        <span class="text-xs">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'}</span>
-        <span class="text-xs text-white">${n.content}</span>
+  el.innerHTML = data.notices.map(n => {
+    // HTML 태그 포함 시 HTML로 렌더링, 아니면 텍스트
+    const isHtml = n.content && n.content.includes('<')
+    const displayContent = isHtml
+      ? `<div class="notice-content text-xs text-white">${n.content}</div>`
+      : `<span class="text-xs text-white">${n.content}</span>`
+    return `
+    <div class="flex items-start justify-between p-2 bg-black/20 rounded-lg gap-2">
+      <div class="flex items-start gap-2 min-w-0 flex-1">
+        <span class="text-xs shrink-0 mt-0.5">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'}</span>
+        ${displayContent}
       </div>
       <button onclick="deleteNotice('${n.id}')" class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition shrink-0">${t('notice_delete')}</button>
-    </div>`).join('')
+    </div>`
+  }).join('')
 }
 
 async function postNotice() {
-  const content    = $('noticeInput')?.value.trim()
-  const content_en = $('noticeInputEn')?.value.trim()
+  // Quill 에디터에서 HTML 콘텐츠 가져오기
+  const content    = getQuillHTML('noticeEditorKo') || $('noticeInput')?.value.trim()
+  const content_en = getQuillHTML('noticeEditorEn') || $('noticeInputEn')?.value.trim()
   const content_zh = $('noticeInputZh')?.value.trim()
   const content_ja = $('noticeInputJa')?.value.trim()
   const type       = $('noticeType')?.value || 'info'
-  if (!content) return
+  if (!content) { toast('⚠️ 공지 내용을 입력하세요', 'text-yellow-400'); return }
   const data = await api('/api/admin/notice', { method:'POST', body: JSON.stringify({content, content_en, content_zh, content_ja, type}) })
   if (data.success) {
-    [$('noticeInput'), $('noticeInputEn'), $('noticeInputZh'), $('noticeInputJa')].forEach(el => { if (el) el.value = '' })
+    clearQuill('noticeEditorKo')
+    clearQuill('noticeEditorEn')
+    if ($('noticeInputZh')) $('noticeInputZh').value = ''
+    if ($('noticeInputJa')) $('noticeInputJa').value = ''
     toast('📢 공지 등록 완료', 'text-green-400')
     loadAdminNotices()
     loadNotices()
@@ -1294,6 +1328,74 @@ function copyText(text) {
 }
 
 // ═══════════════════════════════════════════════
+// Quill 에디터 인스턴스 관리
+// ═══════════════════════════════════════════════
+const quillInstances = {}
+
+function initQuill(containerId, placeholder, toolbar) {
+  if (quillInstances[containerId]) return quillInstances[containerId]
+  const el = $(containerId)
+  if (!el || typeof Quill === 'undefined') return null
+  const toolbarOptions = toolbar || [
+    ['bold', 'italic', 'underline'],
+    [{ 'color': [] }],
+    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+    ['link'],
+    ['clean']
+  ]
+  const q = new Quill('#' + containerId, {
+    theme: 'snow',
+    placeholder: placeholder || '내용을 입력하세요...',
+    modules: { toolbar: toolbarOptions }
+  })
+  // 글자 수 카운터 연동
+  const countId = containerId === 'inqEditor' ? 'inqCharCount' : null
+  if (countId) {
+    q.on('text-change', () => {
+      const len = q.getText().trim().length
+      if ($(countId)) $(countId).textContent = len
+    })
+  }
+  quillInstances[containerId] = q
+  return q
+}
+
+function getQuillHTML(containerId) {
+  const q = quillInstances[containerId]
+  if (!q) return ''
+  const html = q.root.innerHTML
+  // 비어있는 경우 체크
+  if (html === '<p><br></p>' || html.trim() === '') return ''
+  return html
+}
+
+function getQuillText(containerId) {
+  const q = quillInstances[containerId]
+  if (!q) return ''
+  return q.getText().trim()
+}
+
+function clearQuill(containerId) {
+  const q = quillInstances[containerId]
+  if (q) q.setContents([])
+}
+
+// 간이 자동번역 (한국어 → 영/중/일 로 동일 복사, 실제 번역 API 없으므로 원문 복사)
+// 실제 DeepL/Papago API 연동 시 여기를 교체
+async function autoTranslateNotice() {
+  const koHtml = getQuillHTML('noticeEditorKo')
+  const koText = getQuillText('noticeEditorKo')
+  if (!koText) { toast('⚠️ 한국어 내용을 먼저 입력하세요', 'text-yellow-400'); return }
+  // 영어 Quill에 동일 내용 복사 (번역 없음 - 사용자가 수정 가능)
+  const qEn = quillInstances['noticeEditorEn']
+  if (qEn) qEn.root.innerHTML = koHtml
+  // 중국어/일본어 textarea에 복사
+  if ($('noticeInputZh')) $('noticeInputZh').value = koText
+  if ($('noticeInputJa')) $('noticeInputJa').value = koText
+  toast('📋 내용이 복사되었습니다 (번역 후 수정하세요)', 'text-blue-400')
+}
+
+// ═══════════════════════════════════════════════
 // 1:1 문의 - 유저
 // ═══════════════════════════════════════════════
 async function loadSupport() {
@@ -1301,9 +1403,16 @@ async function loadSupport() {
   if (!needLogin || !info) return
   if (!me) { needLogin.classList.remove('hidden'); info.classList.add('hidden'); return }
   needLogin.classList.add('hidden'); info.classList.remove('hidden')
-  // 글자 수 카운터
-  const ta = $('inqContent')
-  if (ta) ta.oninput = () => { if ($('inqCharCount')) $('inqCharCount').textContent = ta.value.length }
+  // Quill 에디터 초기화
+  setTimeout(() => {
+    initQuill('inqEditor', '문의 내용을 상세히 입력하세요...', [
+      ['bold', 'italic', 'underline'],
+      [{ 'color': [] }],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      ['link'],
+      ['clean']
+    ])
+  }, 100)
   await loadMyInquiries()
 }
 
@@ -1326,7 +1435,7 @@ async function loadMyInquiries() {
         <span>${inq.category}</span>
         <span>${ago(inq.created_at)}</span>
       </div>
-      ${inq.admin_reply ? `<div class="mt-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300">💬 ${inq.admin_reply}</div>` : ''}
+      ${inq.admin_reply ? `<div class="mt-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300">💬 <span class="inquiry-content">${inq.admin_reply}</span></div>` : ''}
     </div>`).join('')
 }
 
@@ -1341,8 +1450,8 @@ async function openInquiryDetail(id) {
     <div class="space-y-3 text-sm">
       <div><span class="text-gray-400 text-xs">${t('inquiry_category')}</span><div class="font-bold">${inq.category}</div></div>
       <div><span class="text-gray-400 text-xs">${t('inquiry_title')}</span><div class="font-bold">${inq.title}</div></div>
-      <div><span class="text-gray-400 text-xs">${t('inquiry_content')}</span><div class="bg-black/30 rounded-lg p-3 text-xs text-gray-300 whitespace-pre-wrap">${inq.content}</div></div>
-      ${inq.admin_reply ? `<div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3"><div class="text-blue-400 text-xs font-bold mb-1">💬 관리자 답변</div><div class="text-sm whitespace-pre-wrap">${inq.admin_reply}</div><div class="text-xs text-gray-500 mt-1">${ago(inq.admin_reply_at)}</div></div>` : ''}
+      <div><span class="text-gray-400 text-xs">${t('inquiry_content')}</span><div class="bg-black/30 rounded-lg p-3 text-xs text-gray-300 inquiry-content">${inq.content}</div></div>
+      ${inq.admin_reply ? `<div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3"><div class="text-blue-400 text-xs font-bold mb-1">💬 관리자 답변</div><div class="text-sm inquiry-content">${inq.admin_reply}</div><div class="text-xs text-gray-500 mt-1">${ago(inq.admin_reply_at)}</div></div>` : ''}
     </div>`
   modal.classList.remove('hidden')
 }
@@ -1354,7 +1463,8 @@ function closeInquiryDetail() {
 
 async function submitInquiry() {
   const title   = $('inqTitle')?.value.trim()
-  const content = $('inqContent')?.value.trim()
+  // Quill 에디터에서 HTML 콘텐츠 가져오기
+  const content = getQuillHTML('inqEditor') || $('inqContent')?.value.trim()
   const category = $('inqCat')?.value || 'general'
   const errEl   = $('inqErr')
   if (errEl) errEl.classList.add('hidden')
@@ -1364,7 +1474,7 @@ async function submitInquiry() {
     if (errEl) { errEl.textContent = errMap(data.error); errEl.classList.remove('hidden') }; return
   }
   if ($('inqTitle')) $('inqTitle').value = ''
-  if ($('inqContent')) $('inqContent').value = ''
+  clearQuill('inqEditor')
   if ($('inqCharCount')) $('inqCharCount').textContent = '0'
   toast('✅ 문의가 접수되었습니다', 'text-green-400')
   loadMyInquiries()
@@ -1403,7 +1513,16 @@ function openAdminReply(id, title) {
   if ($('adReplyModal')) $('adReplyModal').classList.remove('hidden')
   if ($('adReplyInqId')) $('adReplyInqId').value = id
   if ($('adReplyTitle')) $('adReplyTitle').textContent = title
-  if ($('adReplyText')) $('adReplyText').value = ''
+  // Quill 에디터 초기화
+  setTimeout(() => {
+    const q = initQuill('adReplyEditor', '답변 내용을 입력하세요...', [
+      ['bold', 'italic', 'underline'],
+      [{ 'color': [] }],
+      ['link'],
+      ['clean']
+    ])
+    if (q) q.setContents([])
+  }, 100)
 }
 
 function closeAdminReply() {
@@ -1412,7 +1531,8 @@ function closeAdminReply() {
 
 async function submitAdminReply() {
   const inquiryId = $('adReplyInqId')?.value
-  const reply     = $('adReplyText')?.value.trim()
+  // Quill 에디터에서 HTML 콘텐츠 가져오기
+  const reply = getQuillHTML('adReplyEditor') || $('adReplyText')?.value.trim()
   if (!reply) { toast('❌ 답변 내용을 입력하세요', 'text-red-400'); return }
   const data = await api('/api/admin/inquiry/reply', { method:'POST', body: JSON.stringify({inquiryId, reply}) })
   if (data.success) { toast('✅ 답변 등록 완료', 'text-green-400'); closeAdminReply(); loadAdminInquiries('') }
