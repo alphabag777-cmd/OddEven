@@ -1749,25 +1749,17 @@ async function loadAdminInquiries(status) {
       ${inq.admin_reply ? `<div class="bg-blue-500/10 p-2 rounded text-blue-300 mb-2 text-xs border border-blue-500/20">💬 관리자 답변: <span class="inquiry-content">${inq.admin_reply.replace(/<[^>]*>/g,'').substring(0,80)}</span></div>` : ''}
       <div class="flex gap-1 flex-wrap">
         <button onclick="openAdminInquiryDetail('${inq.id}')" class="px-2 py-1 bg-white/10 text-gray-300 rounded hover:bg-white/20 transition">📄 내용 보기</button>
-        <button onclick="openAdminReply('${inq.id}','${inq.title.replace(/'/g,'\\'')}',\`${inq.content||''}\`)" class="px-2 py-1 bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600/30 transition">✏️ 답변</button>
+        <button onclick="openAdminReply('${inq.id}','${inq.title.replace(/'/g,'')}')" class="px-2 py-1 bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600/30 transition">✏️ 답변</button>
         <button onclick="closeInquiry('${inq.id}')" class="px-2 py-1 bg-white/10 text-gray-400 rounded hover:bg-white/20 transition">✓ 종료</button>
       </div>
     </div>`
   }).join('')
 }
 
-function openAdminReply(id, title, content) {
+function openAdminReply(id, title) {
   if ($('adReplyModal')) $('adReplyModal').classList.remove('hidden')
   if ($('adReplyInqId')) $('adReplyInqId').value = id
   if ($('adReplyTitle')) $('adReplyTitle').textContent = title
-  // 문의 내용 미리보기 표시
-  const previewEl = $('adReplyContentPreview')
-  if (previewEl && content) {
-    previewEl.innerHTML = content
-    previewEl.closest ? previewEl.closest('.adReplyPreviewWrap')?.classList.remove('hidden') : null
-    const wrap = document.getElementById('adReplyPreviewWrap')
-    if (wrap) wrap.classList.remove('hidden')
-  }
   // Quill 에디터 초기화
   setTimeout(() => {
     const q = initQuill('adReplyEditor', '답변 내용을 입력하세요...', [
@@ -1809,7 +1801,7 @@ async function openAdminInquiryDetail(id) {
           <div class="text-xs text-gray-500 mt-1">${ago(data.admin_reply_at)}</div>
         </div>` : ''}
       <div class="flex gap-2 mt-4">
-        <button onclick="document.getElementById('adminInqDetailModal').remove(); openAdminReply('${data.id}','${(data.title||'').replace(/'/g,"\\'")}',\`${(data.content||'').replace(/`/g,'\\`')}\`)" class="flex-1 py-2 bg-blue-600/30 text-blue-300 rounded-xl hover:bg-blue-600/40 transition text-sm">✏️ 답변하기</button>
+        <button onclick="document.getElementById('adminInqDetailModal').remove(); openAdminReply('${data.id}','${(data.title||'').replace(/'/g,'')}')" class="flex-1 py-2 bg-blue-600/30 text-blue-300 rounded-xl hover:bg-blue-600/40 transition text-sm">✏️ 답변하기</button>
         <button onclick="document.getElementById('adminInqDetailModal').remove()" class="px-4 py-2 bg-white/10 text-gray-400 rounded-xl hover:bg-white/20 transition text-sm">닫기</button>
       </div>
     </div>`
