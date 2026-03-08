@@ -733,10 +733,39 @@ async function loadMypage() {
             ${r.note ? `<div class="text-xs text-red-400">${r.note}</div>` : ''}
           </div>
           <div class="text-right flex flex-col items-end gap-1">
-            <span class="px-2 py-0.5 rounded-full text-xs status-${r.status}">${r.status}</span>
+            <span class="px-2 py-0.5 rounded-full text-xs status-${r.status} wd-status" data-status="${r.status}">${{pending:'대기중',approved:'승인완료',rejected:'거절',cancelled:'취소'}[r.status]||r.status}</span>
             <div class="text-xs text-gray-500">${ago(r.created_at || r.createdAt)}</div>
-            ${r.tx_hash || r.txHash ? `<div class="text-xs text-green-400 mono">${(r.tx_hash||r.txHash).substring(0,10)}...</div>` : ''}
+            ${(r.tx_hash||r.txHash) && r.status==='approved' ? `<a href="https://tronscan.org/#/transaction/${r.tx_hash||r.txHash}" target="_blank" class="text-xs text-blue-400 mono hover:underline">${(r.tx_hash||r.txHash).substring(0,10)}... 🔗</a>` : (r.tx_hash||r.txHash) ? `<div class="text-xs text-green-400 mono">${(r.tx_hash||r.txHash).substring(0,10)}...</div>` : ''}
             ${r.status === 'pending' ? `<button onclick="cancelWithdraw('${r.id}')" class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition">${t('cancel_withdraw')}</button>` : ''}
+          </div>
+        </div>`).join('')
+
+      // 출금 상태 한글화 + TX Hash 링크 처리
+      wdEl.querySelectorAll('.wd-status').forEach(el => {
+        const st = el.dataset.status
+        const statusKo = { pending:'대기중', approved:'승인완료', rejected:'거절', cancelled:'취소' }
+        el.textContent = statusKo[st] || st
+      })
+    }
+  }
+
+  // 입금 내역
+  const depData = await api('/api/me/deposits')
+  const depEl = $('depHistory')
+  if (depEl) {
+    if (!depData.deposits || depData.deposits.length === 0) {
+      depEl.innerHTML = `<div class="text-xs text-gray-500 text-center py-2">${t('no_record')}</div>`
+    } else {
+      const netLbl = { trc20:'TRC20', erc20:'ERC20', bep20:'BEP20', manual:'수동', admin:'관리자' }
+      depEl.innerHTML = depData.deposits.map(d => `
+        <div class="flex items-center justify-between p-2 bg-black/20 rounded-lg">
+          <div>
+            <div class="text-xs font-bold text-green-400">+${fmtU(d.amount)} USDT</div>
+            <div class="text-xs text-gray-500">${netLbl[d.network]||d.network} ${d.memo ? '· '+d.memo : ''}</div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-gray-500">${ago(d.createdAt)}</div>
+            ${d.txHash ? `<div class="text-xs text-blue-400 mono">${d.txHash.substring(0,10)}...</div>` : ''}
           </div>
         </div>`).join('')
     }
@@ -1134,10 +1163,15 @@ async function loadAdmin() {
   const data = await api('/api/admin/stats')
   if (data.error) return
 
-  if ($('adTotalUsers')) $('adTotalUsers').textContent = data.totalUsers
-  if ($('adTodayBet'))   $('adTodayBet').textContent   = fmtU(data.todayBetAmount || 0)
-  if ($('adPendingWd'))  $('adPendingWd').textContent  = data.pendingWithdrawCount
-  if ($('adNewUsers'))   $('adNewUsers').textContent   = data.newUsersToday || 0
+  if ($('adTotalUsers'))   $('adTotalUsers').textContent   = data.totalUsers
+  if ($('adTodayBet'))     $('adTodayBet').textContent     = fmtU(data.todayBetAmount || 0)
+  if ($('adPendingWd'))    $('adPendingWd').textContent    = data.pendingWithdrawCount
+  if ($('adNewUsers'))     $('adNewUsers').textContent     = data.newUsersToday || 0
+  // 추가 지표
+  if ($('adTotalDeposit')) $('adTotalDeposit').textContent = fmtU(data.totalDepositAmount || 0)
+  if ($('adTotalWithdraw'))$('adTotalWithdraw').textContent= fmtU(data.totalWithdrawAmount || 0)
+  if ($('adHouseProfit'))  $('adHouseProfit').textContent  = fmtU(data.houseProfit || 0)
+  if ($('adTodayDeposit')) $('adTodayDeposit').textContent = fmtU(data.todayDepositAmount || 0)
 
   loadAdminWithdraws()
   loadAdminUsers()
@@ -1164,6 +1198,69 @@ async function loadAdmin() {
       ['clean']
     ])
   }, 150)
+
+  // 통계 차트 업데이트 (베팅 + 입금/출금/신규가입 추이)
+  renderAdminCharts(data)
+}
+
+let adminChartInstances = {}
+function renderAdminCharts(data) {
+  // 공통 라벨 (7일)
+  const allDates = []
+  const now = new Date()
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now); d.setDate(d.getDate() - i)
+    allDates.push((d.getMonth()+1).toString().padStart(2,'0') + '/' + d.getDate().toString().padStart(2,'0'))
+  }
+  const findVal = (arr, date, key) => (arr.find(r => r.date === date) || {})[key] || 0
+
+  // 베팅 차트
+  const betCtx = document.getElementById('adminBetChart')
+  if (betCtx) {
+    if (adminChartInstances.bet) adminChartInstances.bet.destroy()
+    adminChartInstances.bet = new Chart(betCtx.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: allDates,
+        datasets: [{
+          label: '베팅금액(USDT)', data: allDates.map(d => findVal(data.dailyStats||[], d, 'betAmount')),
+          backgroundColor: 'rgba(99,102,241,0.5)', borderColor: 'rgba(99,102,241,1)', borderWidth: 1, borderRadius: 4
+        }]
+      },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { ticks: { color:'#9ca3af' }, grid: { color:'rgba(255,255,255,0.05)' } }, x: { ticks: { color:'#9ca3af' }, grid: { display:false } } } }
+    })
+  }
+
+  // 입금/출금 추이 차트
+  const depWdCtx = document.getElementById('adminDepWdChart')
+  if (depWdCtx) {
+    if (adminChartInstances.depWd) adminChartInstances.depWd.destroy()
+    adminChartInstances.depWd = new Chart(depWdCtx.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: allDates,
+        datasets: [
+          { label: '입금', data: allDates.map(d => findVal(data.dailyDeposits||[], d, 'depositAmount')), borderColor:'rgba(74,222,128,1)', backgroundColor:'rgba(74,222,128,0.1)', tension:0.4, fill:true },
+          { label: '출금', data: allDates.map(d => findVal(data.dailyWithdraws||[], d, 'withdrawAmount')), borderColor:'rgba(248,113,113,1)', backgroundColor:'rgba(248,113,113,0.1)', tension:0.4, fill:true }
+        ]
+      },
+      options: { responsive: true, plugins: { legend: { labels: { color:'#9ca3af', boxWidth:12 } } }, scales: { y: { ticks: { color:'#9ca3af' }, grid: { color:'rgba(255,255,255,0.05)' } }, x: { ticks: { color:'#9ca3af' }, grid: { display:false } } } }
+    })
+  }
+
+  // 신규 가입 추이 차트
+  const signupCtx = document.getElementById('adminSignupChart')
+  if (signupCtx) {
+    if (adminChartInstances.signup) adminChartInstances.signup.destroy()
+    adminChartInstances.signup = new Chart(signupCtx.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: allDates,
+        datasets: [{ label: '신규가입', data: allDates.map(d => findVal(data.dailySignups||[], d, 'signupCount')), backgroundColor:'rgba(251,191,36,0.5)', borderColor:'rgba(251,191,36,1)', borderWidth:1, borderRadius:4 }]
+      },
+      options: { responsive: true, plugins: { legend: { display:false } }, scales: { y: { ticks: { color:'#9ca3af' }, grid: { color:'rgba(255,255,255,0.05)' } }, x: { ticks: { color:'#9ca3af' }, grid: { display:false } } } }
+    })
+  }
 }
 
 async function loadAdminWithdraws() {
@@ -1388,6 +1485,7 @@ async function loadAdminUsers(page) {
         <td class="py-1.5 px-2 text-xs">${u.isBanned?'<span class="text-red-400">차단</span>':'<span class="text-green-400">정상</span>'}</td>
         <td class="py-1.5 px-2">
           <div class="flex gap-1">
+            <button onclick="openUserDetail('${u.id}')" class="px-2 py-1 bg-blue-600/30 rounded text-xs hover:bg-blue-600/50 transition" title="상세보기">🔍</button>
             <button onclick="showBalModal('${u.id}','${u.username}')" class="px-2 py-1 bg-yellow-600/30 rounded text-xs hover:bg-yellow-600/50 transition">💰</button>
             <button onclick="adminBan('${u.id}',${!u.isBanned})" class="px-2 py-1 ${u.isBanned?'bg-green-600/30':'bg-red-600/30'} rounded text-xs hover:opacity-80 transition">${u.isBanned?'해제':'차단'}</button>
           </div>
@@ -1428,8 +1526,110 @@ async function adminBan(userId, ban) {
 }
 
 // ═══════════════════════════════════════════════
-// 공지사항
+// 관리자 유저 상세 모달
 // ═══════════════════════════════════════════════
+async function openUserDetail(userId) {
+  const modal = $('userDetailModal')
+  const body  = $('userDetailBody')
+  if (!modal || !body) return
+  body.innerHTML = '<div class="text-center py-8 text-gray-400">로딩 중...</div>'
+  modal.classList.remove('hidden')
+
+  const data = await api('/api/admin/user/' + userId + '/detail')
+  if (data.error) { body.innerHTML = '<div class="text-red-400 text-center py-4">불러오기 실패</div>'; return }
+
+  const u = data.user
+  const statusLbl = { pending:'<span class="text-orange-400">대기중</span>', approved:'<span class="text-green-400">승인</span>', rejected:'<span class="text-red-400">거절</span>', cancelled:'<span class="text-gray-400">취소</span>' }
+  const netLbl = { trc20:'TRC20', erc20:'ERC20', bep20:'BEP20', manual:'수동', admin:'관리자' }
+
+  const sameIpHtml = data.sameIpUsers.length > 0
+    ? `<div class="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+        <div class="text-xs font-bold text-yellow-400 mb-1">⚠️ 동일 IP 계정 (${data.sameIpUsers.length}개)</div>
+        ${data.sameIpUsers.map(s => `<div class="text-xs text-gray-300">${s.username} ${s.isBanned?'<span class="text-red-400">[차단]</span>':''}</div>`).join('')}
+      </div>` : ''
+
+  body.innerHTML = `
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="bg-white/5 rounded-lg p-3">
+        <div class="text-xs text-gray-400 mb-1">👤 유저 정보</div>
+        <div class="font-bold">${u.username} ${u.isAdmin?'👑':''} ${u.isBanned?'<span class="text-red-400">🚫차단</span>':''}</div>
+        <div class="text-xs text-gray-400 mt-1">IP: ${u.lastIp||'-'} · 로그인 ${u.loginCount}회</div>
+        <div class="text-xs text-gray-400">가입: ${ago(u.createdAt)}</div>
+        ${sameIpHtml}
+      </div>
+      <div class="bg-white/5 rounded-lg p-3">
+        <div class="text-xs text-gray-400 mb-1">💰 잔액 · 통계</div>
+        <div class="font-bold usdt">${fmtU(u.balance)} USDT</div>
+        <div class="text-xs mt-1"><span class="text-green-400">입금 ${fmtU(u.totalDeposit)}</span> · <span class="text-red-400">출금 ${fmtU(u.totalWithdraw)}</span></div>
+        <div class="text-xs"><span class="text-blue-400">베팅 ${fmtU(u.totalBetAmount)}</span> · <span class="text-yellow-400">추천수당 ${fmtU(u.referralEarnings)}</span></div>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <div class="text-xs font-bold text-green-400 mb-1">📥 입금 내역 (${data.deposits.length}건)</div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-500 border-b border-white/10"><th class="py-1 text-left">금액</th><th class="text-left">네트워크</th><th class="text-left">TX Hash</th><th class="text-left">메모</th><th class="text-left">시간</th></tr></thead>
+          <tbody>
+            ${data.deposits.length === 0 ? '<tr><td colspan="5" class="text-center text-gray-500 py-2">내역 없음</td></tr>' :
+              data.deposits.map(d => `<tr class="border-b border-white/5">
+                <td class="py-1 text-green-400 font-bold">+${fmtU(d.amount)}</td>
+                <td class="py-1">${netLbl[d.network]||d.network}</td>
+                <td class="py-1 mono text-gray-400">${d.txHash ? d.txHash.substring(0,12)+'...' : '-'}</td>
+                <td class="py-1 text-gray-400">${d.memo||'-'}</td>
+                <td class="py-1 text-gray-500">${ago(d.createdAt)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <div class="text-xs font-bold text-red-400 mb-1">📤 출금 내역 (${data.withdraws.length}건)</div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-500 border-b border-white/10"><th class="py-1 text-left">금액</th><th class="text-left">주소</th><th class="text-left">상태</th><th class="text-left">TX Hash</th><th class="text-left">시간</th></tr></thead>
+          <tbody>
+            ${data.withdraws.length === 0 ? '<tr><td colspan="5" class="text-center text-gray-500 py-2">내역 없음</td></tr>' :
+              data.withdraws.map(w => `<tr class="border-b border-white/5">
+                <td class="py-1 text-red-400 font-bold">-${fmtU(w.amount)}</td>
+                <td class="py-1 mono text-gray-400">${w.address ? w.address.substring(0,10)+'...' : '-'}</td>
+                <td class="py-1">${statusLbl[w.status]||w.status}</td>
+                <td class="py-1 mono text-gray-400">${w.txHash ? w.txHash.substring(0,10)+'...' : '-'}</td>
+                <td class="py-1 text-gray-500">${ago(w.createdAt)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <div class="text-xs font-bold text-blue-400 mb-1">🎲 베팅 내역 (${data.bets.length}건)</div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-500 border-b border-white/10"><th class="py-1 text-left">라운드</th><th class="text-left">선택</th><th class="text-left">결과</th><th class="text-right">베팅</th><th class="text-right">손익</th><th class="text-left">시간</th></tr></thead>
+          <tbody>
+            ${data.bets.length === 0 ? '<tr><td colspan="6" class="text-center text-gray-500 py-2">내역 없음</td></tr>' :
+              data.bets.map(b => `<tr class="border-b border-white/5">
+                <td class="py-1">#${b.roundId}</td>
+                <td class="py-1"><span class="px-1 rounded ${b.choice==='odd'?'text-red-400':'text-blue-400'}">${b.choice==='odd'?'홀':'짝'}</span></td>
+                <td class="py-1"><span class="px-1 rounded ${b.result==='odd'?'text-red-400':'text-blue-400'}">${b.result==='odd'?'홀':'짝'}</span></td>
+                <td class="py-1 text-right">${fmtU(b.amount)}</td>
+                <td class="py-1 text-right ${b.win?'text-green-400 font-bold':'text-red-400'}">${b.win?'+'+fmtU(b.payout):'-'+fmtU(b.amount)}</td>
+                <td class="py-1 text-gray-500">${ago(b.timestamp)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mt-3 flex gap-2">
+      <button onclick="showBalModal('${u.id}','${u.username}')" class="flex-1 py-2 bg-yellow-600/30 hover:bg-yellow-600/50 rounded-lg text-xs font-bold transition">💰 잔액 조정</button>
+      <button onclick="adminBan('${u.id}',${!u.isBanned})" class="flex-1 py-2 ${u.isBanned?'bg-green-600/30 hover:bg-green-600/50':'bg-red-600/30 hover:bg-red-600/50'} rounded-lg text-xs font-bold transition">${u.isBanned?'✅ 차단 해제':'🚫 차단'}</button>
+      <button onclick="$('userDetailModal').classList.add('hidden')" class="flex-1 py-2 bg-gray-600/30 hover:bg-gray-600/50 rounded-lg text-xs font-bold transition">닫기</button>
+    </div>
+  `
+}
 async function loadNotices() {
   const data = await api('/api/notices?lang=' + (localStorage.getItem('lang') || 'ko'))
   const banner = $('noticeBanner')
@@ -2045,14 +2245,23 @@ async function loadAdminFAQs() {
   if (!data.faqs || data.faqs.length === 0) {
     el.innerHTML = '<div class="text-gray-500 text-center py-2">FAQ 없음</div>'; return
   }
+  const catLbl = { general:'일반', deposit:'입금', withdraw:'출금', bet:'게임', referral:'추천', other:'기타' }
   el.innerHTML = data.faqs.map(f => `
-    <div class="flex items-start justify-between gap-2 p-2 bg-black/20 rounded-lg">
-      <div class="flex-1 min-w-0">
-        <div class="text-xs font-bold text-white truncate">[${f.category}] ${f.question}</div>
-        <div class="text-xs text-gray-400 truncate">${f.answer}</div>
+    <div class="p-2 bg-black/20 rounded-lg">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-bold text-white truncate"><span class="text-yellow-400">[${catLbl[f.category]||f.category}]</span> ${f.question}</div>
+          <div class="text-xs text-gray-400 truncate mt-0.5">${f.answer}</div>
+        </div>
+        <div class="flex gap-1 shrink-0">
+          <button onclick="openFAQEdit('${f.id}')" class="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs hover:bg-blue-500/30 transition">수정</button>
+          <button onclick="deleteFAQ('${f.id}')" class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition">삭제</button>
+        </div>
       </div>
-      <button onclick="deleteFAQ('${f.id}')" class="shrink-0 px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition">삭제</button>
     </div>`).join('')
+
+  // FAQ 데이터를 전역에 캐시
+  window._faqCache = data.faqs
 }
 
 async function createFAQ() {
@@ -2075,6 +2284,32 @@ async function deleteFAQ(id) {
   if (!confirm('이 FAQ를 삭제하시겠습니까?')) return
   const data = await api('/api/admin/faq/delete', { method:'POST', body: JSON.stringify({id}) })
   if (data.success) { toast('🗑️ FAQ 삭제', 'text-yellow-400'); loadAdminFAQs() }
+}
+
+function openFAQEdit(id) {
+  const faq = (window._faqCache || []).find(f => f.id === id)
+  if (!faq) return
+  const modal = $('faqEditModal')
+  if (!modal) return
+  $('faqEditId').value       = faq.id
+  $('faqEditCat').value      = faq.category || 'general'
+  $('faqEditQ').value        = faq.question || ''
+  $('faqEditA').value        = faq.answer || ''
+  modal.classList.remove('hidden')
+}
+
+async function saveFAQEdit() {
+  const id       = $('faqEditId')?.value
+  const category = $('faqEditCat')?.value || 'general'
+  const question = $('faqEditQ')?.value.trim()
+  const answer   = $('faqEditA')?.value.trim()
+  if (!question || !answer) { toast('❌ 질문과 답변을 입력하세요', 'text-red-400'); return }
+  const data = await api('/api/admin/faq/update', { method:'POST', body: JSON.stringify({id, category, question, answer, is_active: true}) })
+  if (data.success) {
+    toast('✅ FAQ 수정 완료', 'text-green-400')
+    $('faqEditModal').classList.add('hidden')
+    loadAdminFAQs()
+  } else toast('❌ ' + (data.error||'오류'), 'text-red-400')
 }
 
 // ═══════════════════════════════════════════════
@@ -2186,11 +2421,44 @@ async function init() {
   loadFeed()
   loadDashboard()
   loadNotices()  // 공지 배너 로드
+  checkNoticePopup()  // 공지 팝업
 
   setInterval(loadRound, 1000)
   setInterval(loadFeed,  4000)
   setInterval(loadDashboard, 30000)
   setInterval(loadNotices, 60000)  // 1분마다 공지 갱신
+}
+
+// ═══════════════════════════════════════════════
+// 공지사항 팝업 (오늘 하루 보지 않기)
+// ═══════════════════════════════════════════════
+async function checkNoticePopup() {
+  const lang = localStorage.getItem('lang') || 'ko'
+  const data = await api('/api/notice/latest?lang=' + lang)
+  if (!data.notice) return
+
+  const noticeId = data.notice.id
+  const skipKey  = 'notice_skip_' + noticeId
+  const skipTs   = localStorage.getItem(skipKey)
+  if (skipTs) {
+    const today = new Date(); today.setHours(0,0,0,0)
+    if (parseInt(skipTs) >= today.getTime()) return  // 오늘 이미 닫음
+  }
+
+  const modal = $('noticePopupModal')
+  const body  = $('noticePopupBody')
+  if (!modal || !body) return
+
+  const colorMap = { warning:'border-yellow-500/40 text-yellow-300', danger:'border-red-500/40 text-red-300', info:'border-blue-500/40 text-blue-300' }
+  const typeClass = colorMap[data.notice.type] || colorMap.info
+  body.innerHTML = `<div class="prose prose-invert prose-sm max-w-none text-sm text-gray-200">${data.notice.displayContent}</div>`
+  modal.classList.remove('hidden')
+  $('noticePopupClose').onclick = () => modal.classList.add('hidden')
+  $('noticeSkipToday').onclick  = () => {
+    const today = new Date(); today.setHours(0,0,0,0)
+    localStorage.setItem(skipKey, String(today.getTime()))
+    modal.classList.add('hidden')
+  }
 }
 
 init()

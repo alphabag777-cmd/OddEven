@@ -780,6 +780,20 @@ app.get('/api/notices', async (c) => {
   return c.json({ notices: result })
 })
 
+// 공지사항 최신 1건 (팝업용)
+app.get('/api/notice/latest', async (c) => {
+  const lang = c.req.query('lang') || 'ko'
+  const notice = await c.env.DB.prepare(
+    "SELECT id, content, content_en, content_zh, content_ja, type, created_at FROM notices WHERE is_active=1 ORDER BY created_at DESC LIMIT 1"
+  ).first<any>()
+  if (!notice) return c.json({ notice: null })
+  const displayContent = (lang === 'en' && notice.content_en) ? notice.content_en
+    : (lang === 'zh' && notice.content_zh) ? notice.content_zh
+    : (lang === 'ja' && notice.content_ja) ? notice.content_ja
+    : notice.content
+  return c.json({ notice: { ...notice, displayContent } })
+})
+
 app.post('/api/admin/notice', async (c) => {
   if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
   const { content, content_en, content_zh, content_ja, type } = await c.req.json()
@@ -1035,7 +1049,12 @@ app.get('/api/admin/stats', async (c) => {
       (SELECT COALESCE(SUM(amount),0) FROM withdraw_requests WHERE status='pending') as pendingWithdrawAmount,
       (SELECT COUNT(*) FROM rounds WHERE settled=1) as totalGames,
       (SELECT COALESCE(SUM(amount),0) FROM bets WHERE created_at >= ${todayTs}) as todayBetAmount,
-      (SELECT COUNT(*) FROM bets WHERE created_at >= ${todayTs}) as todayBetCount
+      (SELECT COUNT(*) FROM bets WHERE created_at >= ${todayTs}) as todayBetCount,
+      (SELECT COALESCE(SUM(amount),0) FROM deposit_logs) as totalDepositAmount,
+      (SELECT COUNT(*) FROM deposit_logs WHERE created_at >= ${todayTs}) as todayDepositCount,
+      (SELECT COALESCE(SUM(amount),0) FROM deposit_logs WHERE created_at >= ${todayTs}) as todayDepositAmount,
+      (SELECT COALESCE(SUM(amount),0) FROM withdraw_requests WHERE status='approved') as totalWithdrawAmount,
+      (SELECT COALESCE(SUM(amount),0) FROM withdraw_requests WHERE status='approved' AND processed_at >= ${todayTs}) as todayWithdrawAmount
   `).first<any>()
 
   const daily = await c.env.DB.prepare(`
@@ -1047,8 +1066,36 @@ app.get('/api/admin/stats', async (c) => {
     GROUP BY date ORDER BY date ASC
   `).bind(weekAgoTs).all<any>()
 
+  // 7일 일별 입금/출금/신규가입 추이
+  const dailyDeposits = await c.env.DB.prepare(`
+    SELECT strftime('%m/%d', datetime(created_at/1000,'unixepoch')) as date,
+      COALESCE(SUM(amount),0) as depositAmount, COUNT(*) as depositCount
+    FROM deposit_logs WHERE created_at >= ?
+    GROUP BY date ORDER BY date ASC
+  `).bind(weekAgoTs).all<any>()
+
+  const dailyWithdraws = await c.env.DB.prepare(`
+    SELECT strftime('%m/%d', datetime(processed_at/1000,'unixepoch')) as date,
+      COALESCE(SUM(amount),0) as withdrawAmount, COUNT(*) as withdrawCount
+    FROM withdraw_requests WHERE status='approved' AND processed_at >= ?
+    GROUP BY date ORDER BY date ASC
+  `).bind(weekAgoTs).all<any>()
+
+  const dailySignups = await c.env.DB.prepare(`
+    SELECT strftime('%m/%d', datetime(created_at/1000,'unixepoch')) as date,
+      COUNT(*) as signupCount
+    FROM users WHERE created_at >= ?
+    GROUP BY date ORDER BY date ASC
+  `).bind(weekAgoTs).all<any>()
+
   const houseProfit = r2((stats?.totalBetAmount||0) - (stats?.totalPayoutAmount||0) - (stats?.totalReferralPaid||0))
-  return c.json({ ...stats, houseProfit, dailyStats: daily.results || [] })
+  return c.json({
+    ...stats, houseProfit,
+    dailyStats: daily.results || [],
+    dailyDeposits: dailyDeposits.results || [],
+    dailyWithdraws: dailyWithdraws.results || [],
+    dailySignups: dailySignups.results || []
+  })
 })
 
 app.get('/api/admin/withdraws', async (c) => {
@@ -1145,6 +1192,80 @@ app.get('/api/admin/deposits', async (c) => {
   if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
   const logs = await c.env.DB.prepare('SELECT * FROM deposit_logs ORDER BY created_at DESC LIMIT 100').all<any>()
   return c.json({ deposits: logs.results || [] })
+})
+
+// ─────────────────────────────────────────────
+// API: 관리자 유저 상세 (베팅/입금/출금 이력 + 동일IP 계정)
+// ─────────────────────────────────────────────
+app.get('/api/admin/user/:userId/detail', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const userId = c.req.param('userId')
+  const user = await getUser(c.env.DB, userId)
+  if (!user) return c.json({ error:'NOT_FOUND' }, 404)
+
+  const bets = await c.env.DB.prepare(`
+    SELECT b.round_id, b.choice, b.amount, b.payout, b.win, b.created_at, r.result
+    FROM bets b LEFT JOIN rounds r ON b.round_id=r.id
+    WHERE b.user_id=? ORDER BY b.created_at DESC LIMIT 50
+  `).bind(userId).all<any>()
+
+  const deposits = await c.env.DB.prepare(
+    'SELECT id, amount, tx_hash, network, memo, created_at FROM deposit_logs WHERE user_id=? ORDER BY created_at DESC LIMIT 30'
+  ).bind(userId).all<any>()
+
+  const withdraws = await c.env.DB.prepare(
+    'SELECT id, amount, address, status, tx_hash, note, created_at, processed_at FROM withdraw_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 30'
+  ).bind(userId).all<any>()
+
+  // 동일 IP 계정 탐지
+  const sameIpUsers = user.last_ip
+    ? await c.env.DB.prepare(
+        'SELECT id, username, is_banned, created_at FROM users WHERE last_ip=? AND id!=? LIMIT 10'
+      ).bind(user.last_ip, userId).all<any>()
+    : { results: [] }
+
+  return c.json({
+    user: {
+      id: user.id, username: user.username, balance: user.balance,
+      totalDeposit: user.total_deposit, totalWithdraw: user.total_withdraw,
+      totalBetAmount: user.total_bet_amount, referralEarnings: user.referral_earnings,
+      isAdmin: !!user.is_admin, isBanned: !!user.is_banned,
+      createdAt: user.created_at, lastIp: user.last_ip, loginCount: user.login_count,
+      adminMemo: user.admin_memo || ''
+    },
+    bets: (bets.results||[]).map((b:any) => ({
+      roundId: b.round_id, choice: b.choice, result: b.result,
+      amount: b.amount, win: !!b.win, payout: b.payout, timestamp: b.created_at
+    })),
+    deposits: (deposits.results||[]).map((d:any) => ({
+      id: d.id, amount: d.amount, txHash: d.tx_hash,
+      network: d.network||'manual', memo: d.memo||'', createdAt: d.created_at
+    })),
+    withdraws: (withdraws.results||[]).map((w:any) => ({
+      id: w.id, amount: w.amount, address: w.address, status: w.status,
+      txHash: w.tx_hash, note: w.note, createdAt: w.created_at, processedAt: w.processed_at
+    })),
+    sameIpUsers: (sameIpUsers.results||[]).map((u:any) => ({
+      id: u.id, username: u.username, isBanned: !!u.is_banned, createdAt: u.created_at
+    }))
+  })
+})
+
+// ─────────────────────────────────────────────
+// API: 마이페이지 입금 내역
+// ─────────────────────────────────────────────
+app.get('/api/me/deposits', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+  const logs = await c.env.DB.prepare(
+    'SELECT id, amount, tx_hash, network, memo, created_at FROM deposit_logs WHERE user_id=? ORDER BY created_at DESC LIMIT 30'
+  ).bind(user.id).all<any>()
+  return c.json({
+    deposits: (logs.results||[]).map((d:any) => ({
+      id: d.id, amount: d.amount, txHash: d.tx_hash,
+      network: d.network||'manual', memo: d.memo||'', createdAt: d.created_at
+    }))
+  })
 })
 
 // ─────────────────────────────────────────────
@@ -1564,7 +1685,10 @@ select option{background:#1a1a2e;color:#fff}
       <div class="font-bold mb-3 text-sm" data-i18n="withdraw_history">📤 출금 내역</div>
       <div id="wdHistory" class="space-y-2"><div class="text-xs text-gray-500 text-center py-2" data-i18n="no_record">기록 없음</div></div>
     </div>
-    <!-- 비밀번호 변경 -->
+    <div class="glass rounded-xl p-4">
+      <div class="font-bold mb-3 text-sm">📥 입금 내역</div>
+      <div id="depHistory" class="space-y-2"><div class="text-xs text-gray-500 text-center py-2">기록 없음</div></div>
+    </div>
     <div class="glass rounded-xl p-4">
       <div class="font-bold mb-3 text-sm">🔐 <span data-i18n="change_pw_title">비밀번호 변경</span></div>
       <div class="space-y-2">
@@ -1839,13 +1963,36 @@ select option{background:#1a1a2e;color:#fff}
 <!-- ══ 관리자 탭 ══ -->
 <div id="p-admin" class="hidden">
   <div class="mb-4"><h2 class="text-xl font-black mb-1 text-yellow-400">⚙️ 관리자 페이지</h2></div>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2">
     <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-yellow-400" id="adTotalUsers">0</div><div class="text-xs text-gray-400 mt-1">전체 유저</div></div>
     <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-green-400" id="adTodayBet">0</div><div class="text-xs text-gray-400 mt-1">오늘 베팅(USDT)</div></div>
     <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-red-400" id="adPendingWd">0</div><div class="text-xs text-gray-400 mt-1">대기 출금</div></div>
     <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-blue-400" id="adNewUsers">0</div><div class="text-xs text-gray-400 mt-1">오늘 신규</div></div>
   </div>
-  <!-- 공지 관리 -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="admin-card rounded-xl p-3 text-center"><div class="text-xl font-black text-emerald-400" id="adTotalDeposit">0</div><div class="text-xs text-gray-400 mt-1">총 입금(USDT)</div></div>
+    <div class="admin-card rounded-xl p-3 text-center"><div class="text-xl font-black text-orange-400" id="adTotalWithdraw">0</div><div class="text-xs text-gray-400 mt-1">총 출금(USDT)</div></div>
+    <div class="admin-card rounded-xl p-3 text-center"><div class="text-xl font-black text-purple-400" id="adHouseProfit">0</div><div class="text-xs text-gray-400 mt-1">총 수익(USDT)</div></div>
+    <div class="admin-card rounded-xl p-3 text-center"><div class="text-xl font-black text-cyan-400" id="adTodayDeposit">0</div><div class="text-xs text-gray-400 mt-1">오늘 입금(USDT)</div></div>
+  </div>
+  <!-- 통계 차트 -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="font-bold text-sm text-yellow-400 mb-3">📊 7일 운영 통계</div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <div class="text-xs text-gray-400 mb-1">📈 베팅 추이</div>
+        <canvas id="adminBetChart" height="120"></canvas>
+      </div>
+      <div>
+        <div class="text-xs text-gray-400 mb-1">💰 입금/출금 추이</div>
+        <canvas id="adminDepWdChart" height="120"></canvas>
+      </div>
+      <div>
+        <div class="text-xs text-gray-400 mb-1">👥 신규 가입 추이</div>
+        <canvas id="adminSignupChart" height="120"></canvas>
+      </div>
+    </div>
+  </div>
   <div class="glass rounded-xl p-4 mb-4">
     <div class="font-bold text-sm text-yellow-400 mb-3">📢 공지사항 관리</div>
     <div class="space-y-2 mb-3">
@@ -1945,7 +2092,43 @@ select option{background:#1a1a2e;color:#fff}
     </div>
   </div>
 
-  <!-- ══ 입금 설정 (본사 주소 / 네트워크 관리) ══ -->
+  <!-- ══ 유저 상세 모달 ══ -->
+  <div id="userDetailModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.7)">
+    <div class="glass rounded-2xl p-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-3">
+        <div class="font-bold text-yellow-400">🔍 유저 상세</div>
+        <button onclick="$('userDetailModal').classList.add('hidden')" class="text-gray-400 hover:text-white text-xl">✕</button>
+      </div>
+      <div id="userDetailBody"><div class="text-center py-8 text-gray-400">로딩 중...</div></div>
+    </div>
+  </div>
+
+  <!-- ══ FAQ 편집 모달 ══ -->
+  <div id="faqEditModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.7)">
+    <div class="glass rounded-2xl p-4 w-full max-w-md">
+      <div class="flex items-center justify-between mb-3">
+        <div class="font-bold text-yellow-400">✏️ FAQ 수정</div>
+        <button onclick="$('faqEditModal').classList.add('hidden')" class="text-gray-400 hover:text-white text-xl">✕</button>
+      </div>
+      <input type="hidden" id="faqEditId">
+      <div class="space-y-2">
+        <select id="faqEditCat" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm focus:outline-none">
+          <option value="general">일반</option>
+          <option value="deposit">입금</option>
+          <option value="withdraw">출금</option>
+          <option value="bet">게임</option>
+          <option value="referral">추천</option>
+          <option value="other">기타</option>
+        </select>
+        <textarea id="faqEditQ" rows="2" placeholder="질문 (한국어)" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm focus:outline-none resize-none"></textarea>
+        <textarea id="faqEditA" rows="4" placeholder="답변 (한국어)" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm focus:outline-none resize-none"></textarea>
+        <div class="flex gap-2">
+          <button onclick="saveFAQEdit()" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-bold transition">💾 저장</button>
+          <button onclick="$('faqEditModal').classList.add('hidden')" class="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition">취소</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="glass rounded-xl p-4 mb-4">
     <div class="flex items-center justify-between mb-3">
       <div class="font-bold text-sm text-yellow-400">💳 입금 설정 (본사 주소 · 네트워크)</div>
@@ -2273,6 +2456,21 @@ select option{background:#1a1a2e;color:#fff}
 </div>
 
 </main>
+
+<!-- 공지사항 팝업 모달 -->
+<div id="noticePopupModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.75)">
+  <div class="glass rounded-2xl p-5 w-full max-w-md border border-yellow-500/30">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-yellow-400">📢 공지사항</div>
+      <button id="noticePopupClose" class="text-gray-400 hover:text-white text-xl">✕</button>
+    </div>
+    <div id="noticePopupBody" class="mb-4 text-sm text-gray-200 max-h-64 overflow-y-auto"></div>
+    <div class="flex gap-2">
+      <button id="noticeSkipToday" class="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs transition">오늘 하루 보지 않기</button>
+      <button id="noticePopupClose" onclick="$('noticePopupModal').classList.add('hidden')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-xl text-xs font-bold transition">확인</button>
+    </div>
+  </div>
+</div>
 
 <div id="toast" class="fixed bottom-5 right-4 z-50 hidden max-w-xs w-full px-2">
   <div id="toastMsg" class="glass rounded-xl px-4 py-3 text-sm font-bold shadow-2xl slide"></div>
