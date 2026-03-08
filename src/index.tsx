@@ -33,6 +33,25 @@ const LOGIN_LOCK_MS    = 15 * 60 * 1000  // 잠금 시간 15분
 // ─────────────────────────────────────────────
 // 유틸
 // ─────────────────────────────────────────────
+
+// DB에서 게임 설정 동적 로드 (없으면 기본값 사용)
+async function getGameSettings(db: D1Database) {
+  const rows = await db.prepare(
+    "SELECT key, value FROM site_settings WHERE key LIKE 'game_%' OR key LIKE 'withdraw_%'"
+  ).all<any>()
+  const s: Record<string, string> = {}
+  for (const r of (rows.results || [])) s[r.key] = r.value
+  return {
+    PAYOUT:          parseFloat(s['game_payout']             || String(PAYOUT)),
+    MIN_BET:         parseFloat(s['game_min_bet']            || String(MIN_BET)),
+    MAX_BET:         parseFloat(s['game_max_bet']            || String(MAX_BET)),
+    WITHDRAW_FEE:    parseFloat(s['withdraw_fee']            || String(WITHDRAW_FEE)),
+    MIN_WITHDRAW:    parseFloat(s['withdraw_min_amount']     || String(MIN_WITHDRAW_AMT)),
+    BET_REQUIREMENT: parseFloat(s['withdraw_bet_requirement']|| '0.5'),
+    L1:              parseFloat(s['game_l1_rate']            || String(L1)),
+    L2:              parseFloat(s['game_l2_rate']            || String(L2)),
+  }
+}
 async function sha256(msg: string): Promise<string> {
   const buf  = new TextEncoder().encode(msg)
   const hash = await crypto.subtle.digest('SHA-256', buf)
@@ -130,6 +149,9 @@ async function settleRound(db: D1Database, round: any) {
   const betsResult = await db.prepare('SELECT * FROM bets WHERE round_id=? AND settled=0').bind(round.id).all<any>()
   const bets = betsResult.results || []
 
+  // DB에서 동적 설정 로드
+  const cfg = await getGameSettings(db)
+
   const userSeeds = bets.map((b: any) => b.user_id).join('')
   const hash      = await sha256(round.server_seed + round.block_height + userSeeds)
   const result    = isOdd(hash) ? 'odd' : 'even'
@@ -139,7 +161,7 @@ async function settleRound(db: D1Database, round: any) {
 
   for (const bet of bets) {
     const win    = bet.choice === result
-    const payout = win ? r2(bet.amount * PAYOUT) : 0
+    const payout = win ? r2(bet.amount * cfg.PAYOUT) : 0
     totalPayout += payout
 
     // 베팅 결과 업데이트
@@ -163,14 +185,14 @@ async function settleRound(db: D1Database, round: any) {
     // 추천수당 지급
     const betUser = await db.prepare('SELECT referred_by, partner_code FROM users WHERE id=?').bind(bet.user_id).first<any>()
     if (betUser?.referred_by) {
-      const r1 = r2(bet.amount * L1)
+      const r1 = r2(bet.amount * cfg.L1)
       stmts.push(
         db.prepare('UPDATE users SET balance=balance+?, referral_earnings=referral_earnings+? WHERE id=?')
           .bind(r1, r1, betUser.referred_by)
       )
       const l1User = await db.prepare('SELECT referred_by FROM users WHERE id=?').bind(betUser.referred_by).first<any>()
       if (l1User?.referred_by) {
-        const r2amt = r2(bet.amount * L2)
+        const r2amt = r2(bet.amount * cfg.L2)
         stmts.push(
           db.prepare('UPDATE users SET balance=balance+?, referral_earnings=referral_earnings+? WHERE id=?')
             .bind(r2amt, r2amt, l1User.referred_by)
@@ -438,15 +460,16 @@ app.post('/api/withdraw', async (c) => {
   if (!user) return c.json({ error:'UNAUTH' }, 401)
 
   const { amount, address } = await c.req.json()
+  const cfg = await getGameSettings(c.env.DB)
   const amt = parseFloat(amount)
   // 실제 차감액 = 요청금액 + 수수료
-  const totalDeduct = r2(amt + WITHDRAW_FEE)
-  if (!amt || amt < MIN_WITHDRAW_AMT)     return c.json({ error:'MIN_WITHDRAW' }, 400)
-  if (totalDeduct > user.balance)         return c.json({ error:'INSUFFICIENT' }, 400)
-  if (!address || address.length < 10)   return c.json({ error:'INVALID_ADDR' }, 400)
+  const totalDeduct = r2(amt + cfg.WITHDRAW_FEE)
+  if (!amt || amt < cfg.MIN_WITHDRAW)    return c.json({ error:'MIN_WITHDRAW', min: cfg.MIN_WITHDRAW }, 400)
+  if (totalDeduct > user.balance)        return c.json({ error:'INSUFFICIENT' }, 400)
+  if (!address || address.length < 10)  return c.json({ error:'INVALID_ADDR' }, 400)
 
   // 베팅 조건 확인
-  const minBetRequired = user.total_deposit * 0.5
+  const minBetRequired = user.total_deposit * cfg.BET_REQUIREMENT
   if (user.total_bet_amount < minBetRequired)
     return c.json({ error:'BET_REQUIREMENT', required: minBetRequired, current: user.total_bet_amount }, 400)
 
@@ -461,7 +484,7 @@ app.post('/api/withdraw', async (c) => {
   ])
 
   const updated = await getUser(c.env.DB, user.id)
-  return c.json({ success:true, balance: updated?.balance || 0, requestId: reqId, fee: WITHDRAW_FEE })
+  return c.json({ success:true, balance: updated?.balance || 0, requestId: reqId, fee: cfg.WITHDRAW_FEE })
 })
 
 app.get('/api/withdraw/status', async (c) => {
@@ -530,10 +553,11 @@ app.post('/api/bet', async (c) => {
   const { choice, amount } = await c.req.json()
   if (choice !== 'odd' && choice !== 'even') return c.json({ error:'INVALID_CHOICE' }, 400)
 
+  const cfg = await getGameSettings(c.env.DB)
   const amt = parseFloat(amount)
-  if (!amt || amt < MIN_BET)  return c.json({ error:'MIN_BET' }, 400)
-  if (amt > MAX_BET)          return c.json({ error:'MAX_BET' }, 400)
-  if (amt > user.balance)     return c.json({ error:'INSUFFICIENT' }, 400)
+  if (!amt || amt < cfg.MIN_BET)  return c.json({ error:'MIN_BET', min: cfg.MIN_BET }, 400)
+  if (amt > cfg.MAX_BET)          return c.json({ error:'MAX_BET', max: cfg.MAX_BET }, 400)
+  if (amt > user.balance)         return c.json({ error:'INSUFFICIENT' }, 400)
 
   // 중복 베팅 확인
   const alreadyBet = await c.env.DB.prepare('SELECT id FROM bets WHERE round_id=? AND user_id=?').bind(round.id, user.id).first()
@@ -1119,8 +1143,57 @@ app.post('/api/admin/user/ban', async (c) => {
 
 app.get('/api/admin/deposits', async (c) => {
   if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
-  const logs = await c.env.DB.prepare('SELECT * FROM deposit_logs ORDER BY created_at DESC LIMIT 50').all<any>()
+  const logs = await c.env.DB.prepare('SELECT * FROM deposit_logs ORDER BY created_at DESC LIMIT 100').all<any>()
   return c.json({ deposits: logs.results || [] })
+})
+
+// ─────────────────────────────────────────────
+// API: 관리자 수동 입금 처리
+// ─────────────────────────────────────────────
+app.post('/api/admin/deposit/manual', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { userId, amount, txHash, network, memo } = await c.req.json()
+  const amt = parseFloat(amount)
+  if (!userId)                  return c.json({ error:'NEED_USER' }, 400)
+  if (!amt || amt <= 0)         return c.json({ error:'INVALID_AMOUNT' }, 400)
+
+  // 유저 존재 확인
+  const target = await getUser(c.env.DB, userId)
+  if (!target) return c.json({ error:'USER_NOT_FOUND' }, 404)
+
+  const now    = Date.now()
+  const logId  = uid()
+  const finalTx = txHash || ('MANUAL_' + uid())
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET balance=balance+?, total_deposit=total_deposit+? WHERE id=?').bind(amt, amt, userId),
+    c.env.DB.prepare(
+      'INSERT INTO deposit_logs (id,user_id,username,amount,tx_hash,network,memo,created_at) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind(logId, userId, target.username, amt, finalTx, network||'manual', memo||'관리자 수동 입금', now)
+  ])
+
+  const updated = await getUser(c.env.DB, userId)
+  return c.json({ success:true, balance: updated?.balance||0, txId: logId })
+})
+
+// ─────────────────────────────────────────────
+// API: 관리자 - 출금 승인 (TX Hash 포함)
+//   기존 approve를 덮어쓰지 않고 tx_hash 필수 검증 강화
+// ─────────────────────────────────────────────
+app.post('/api/admin/withdraw/approve', async (c) => {
+  if (!await checkAdmin(c.env.DB, c.req.header('X-Session-Id')||'')) return c.json({ error:'FORBIDDEN' }, 403)
+  const { requestId, txHash } = await c.req.json()
+  if (!requestId) return c.json({ error:'NEED_REQUEST_ID' }, 400)
+  const req = await c.env.DB.prepare('SELECT * FROM withdraw_requests WHERE id=?').bind(requestId).first<any>()
+  if (!req)                    return c.json({ error:'NOT_FOUND' }, 404)
+  if (req.status !== 'pending') return c.json({ error:'ALREADY_PROCESSED' }, 400)
+
+  const finalTx = (txHash && txHash.trim()) ? txHash.trim() : ('TX_' + uid())
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE withdraw_requests SET status='approved', processed_at=?, tx_hash=? WHERE id=?").bind(Date.now(), finalTx, requestId),
+    c.env.DB.prepare('UPDATE users SET total_withdraw=total_withdraw+? WHERE id=?').bind(req.amount, req.user_id)
+  ])
+  return c.json({ success:true, txHash: finalTx })
 })
 
 // ─────────────────────────────────────────────
@@ -1169,11 +1242,11 @@ app.post('/api/admin/settings', async (c) => {
   const { settings } = await c.req.json() as { settings: Record<string, string> }
   if (!settings || typeof settings !== 'object') return c.json({ error:'INVALID' }, 400)
 
+  const ALLOWED_PREFIXES = ['deposit_', 'site_', 'game_', 'withdraw_']
   const now = Date.now()
   const stmts = []
   for (const [key, value] of Object.entries(settings)) {
-    // 허용된 키만 저장
-    if (!key.startsWith('deposit_') && !key.startsWith('site_')) continue
+    if (!ALLOWED_PREFIXES.some(p => key.startsWith(p))) continue
     stmts.push(
       c.env.DB.prepare('INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES (?,?,?)')
         .bind(key, String(value), now)
@@ -1181,6 +1254,23 @@ app.post('/api/admin/settings', async (c) => {
   }
   if (stmts.length > 0) await c.env.DB.batch(stmts)
   return c.json({ success: true, saved: stmts.length })
+})
+
+// 게임 설정 공개 조회 (프론트엔드용)
+app.get('/api/game-settings', async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT key, value FROM site_settings WHERE key LIKE 'game_%' OR key LIKE 'withdraw_%'"
+  ).all<any>()
+  const s: Record<string, string> = {}
+  for (const r of (rows.results || [])) s[r.key] = r.value
+  return c.json({
+    payout:          parseFloat(s['game_payout']          || '1.90'),
+    minBet:          parseFloat(s['game_min_bet']          || '0.1'),
+    maxBet:          parseFloat(s['game_max_bet']          || '1000'),
+    withdrawFee:     parseFloat(s['withdraw_fee']          || '1'),
+    minWithdraw:     parseFloat(s['withdraw_min_amount']   || '1'),
+    betRequirement:  parseFloat(s['withdraw_bet_requirement'] || '0.5'),
+  })
 })
 
 // ─────────────────────────────────────────────
@@ -1939,6 +2029,102 @@ select option{background:#1a1a2e;color:#fff}
       <button onclick="createPartner()" class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">+ 파트너 생성</button>
     </div>
     <div id="adPartnerList" class="space-y-2 text-xs"><div class="text-gray-500 text-center py-2">파트너 없음</div></div>
+  </div>
+
+  <!-- ══ 수동 입금 처리 ══ -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm text-green-400">💵 수동 입금 처리</div>
+      <button onclick="loadAdminDepositLogs()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄 내역</button>
+    </div>
+    <div class="bg-green-500/10 border border-green-500/20 rounded-xl p-3 mb-3 text-xs text-green-300">
+      유저 아이디와 입금액을 입력하면 해당 유저의 잔액에 즉시 반영됩니다. TX Hash를 함께 입력하면 입금 내역에 기록됩니다.
+    </div>
+    <div class="space-y-2 mb-3">
+      <div class="flex gap-2">
+        <input type="text" id="manDepUsername" placeholder="유저 아이디" oninput="lookupUserForDeposit()"
+          class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-green-400">
+        <div id="manDepUserInfo" class="flex items-center text-xs text-gray-400 min-w-0">-</div>
+      </div>
+      <input type="hidden" id="manDepUserId">
+      <div class="flex gap-2">
+        <input type="number" id="manDepAmount" placeholder="입금액 (USDT)" min="0.01" step="0.01"
+          class="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-green-400">
+        <select id="manDepNetwork" class="bg-gray-800 border border-white/20 rounded-lg px-2 py-2 text-white text-xs focus:outline-none focus:border-green-400">
+          <option value="trc20">TRC20</option>
+          <option value="erc20">ERC20</option>
+          <option value="bep20">BEP20</option>
+          <option value="manual">수동</option>
+        </select>
+      </div>
+      <input type="text" id="manDepTxHash" placeholder="TX Hash (선택사항 - 실제 트랜잭션 해시 입력)"
+        class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs mono focus:outline-none focus:border-green-400">
+      <input type="text" id="manDepMemo" placeholder="메모 (예: 본인 인증 후 처리)"
+        class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-green-400">
+      <button onclick="adminManualDeposit()" class="w-full py-2.5 bg-green-600 hover:bg-green-700 rounded-xl text-sm font-bold transition">
+        💵 입금 처리 실행
+      </button>
+    </div>
+    <!-- 입금 내역 -->
+    <div id="adDepositLogList" class="space-y-1 text-xs hidden"></div>
+  </div>
+
+  <!-- ══ 게임 · 운영 설정 ══ -->
+  <div class="glass rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="font-bold text-sm text-purple-400">⚙️ 게임 · 운영 설정</div>
+      <button onclick="loadGameSettings()" class="px-3 py-1 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition">🔄</button>
+    </div>
+    <div class="bg-purple-500/10 border border-purple-500/20 rounded-xl p-2 mb-3 text-xs text-purple-300">
+      ⚠️ 설정 변경은 즉시 적용됩니다. 배당률 변경 시 진행 중인 라운드는 영향 없고 다음 라운드부터 적용됩니다.
+    </div>
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">🎯 배당률 (x)</label>
+        <input type="number" id="cfg_payout" value="1.90" min="1.1" max="2.0" step="0.01"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm font-bold focus:outline-none focus:border-purple-400">
+        <div class="text-xs text-gray-500 mt-0.5">현재 1.90x (하우스엣지 5%)</div>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">📊 출금 베팅 조건 (%)</label>
+        <input type="number" id="cfg_bet_req" value="50" min="0" max="200" step="5"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm font-bold focus:outline-none focus:border-purple-400">
+        <div class="text-xs text-gray-500 mt-0.5">입금액의 N% 베팅 후 출금 가능</div>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">⬇️ 최소 베팅 (USDT)</label>
+        <input type="number" id="cfg_min_bet" value="0.1" min="0.01" max="100" step="0.01"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-400">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">⬆️ 최대 베팅 (USDT)</label>
+        <input type="number" id="cfg_max_bet" value="1000" min="1" max="100000" step="1"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-400">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">💸 출금 수수료 (USDT)</label>
+        <input type="number" id="cfg_wd_fee" value="1" min="0" max="50" step="0.1"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-400">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">🔻 최소 출금 (USDT)</label>
+        <input type="number" id="cfg_min_wd" value="1" min="0.1" max="1000" step="0.1"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-400">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">👥 1단계 추천 수당 (%)</label>
+        <input type="number" id="cfg_l1" value="2.5" min="0" max="10" step="0.1"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-400">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">👥 2단계 추천 수당 (%)</label>
+        <input type="number" id="cfg_l2" value="1.0" min="0" max="10" step="0.1"
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-400">
+      </div>
+    </div>
+    <button onclick="saveGameSettings()" class="w-full py-2.5 bg-purple-600 hover:bg-purple-700 rounded-xl text-sm font-bold transition">
+      💾 설정 저장
+    </button>
   </div>
 
   <!-- 1:1 문의 관리 -->

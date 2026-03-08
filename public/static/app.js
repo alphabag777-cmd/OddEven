@@ -1146,6 +1146,7 @@ async function loadAdmin() {
   loadAdminInquiries('')
   loadAdminFAQs()
   loadDepositSettings()  // 입금 설정 로드
+  loadGameSettings()     // 게임/운영 설정 로드
 
   // 공지사항 Quill 에디터 초기화
   setTimeout(() => {
@@ -1173,35 +1174,187 @@ async function loadAdminWithdraws() {
     el.innerHTML = '<div class="text-xs text-gray-500 text-center py-3">출금 요청 없음</div>'
     return
   }
+  const statusLabel = { pending:'대기중', approved:'승인완료', rejected:'거절', cancelled:'취소' }
+  const statusCls   = { pending:'text-orange-400', approved:'text-green-400', rejected:'text-red-400', cancelled:'text-gray-400' }
   el.innerHTML = data.requests.map(r => `
-    <div class="flex flex-wrap items-center justify-between gap-2 p-3 bg-black/20 rounded-xl border border-white/10">
-      <div>
-        <div class="text-sm font-black">${r.username} — <span class="usdt">${fmtU(r.amount)} USDT</span></div>
-        <div class="text-xs text-gray-400 mono">${r.address}</div>
-        <div class="text-xs text-gray-500">${ago(r.createdAt)} 전</div>
+    <div class="p-3 bg-black/20 rounded-xl border border-white/10 text-xs">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div>
+          <span class="font-black text-white text-sm">${r.username}</span>
+          <span class="ml-2 text-green-400 font-bold">${fmtU(r.amount)} USDT</span>
+        </div>
+        <span class="px-2 py-0.5 rounded-full font-bold ${statusCls[r.status]||'text-gray-400'} bg-white/5">${statusLabel[r.status]||r.status}</span>
       </div>
-      <div class="flex items-center gap-2">
-        <span class="px-2 py-0.5 rounded-full text-xs status-${r.status}">${r.status}</span>
-        ${r.status === 'pending' ? `
-          <button onclick="adminApprove('${r.id}')" class="px-3 py-1 bg-green-600 hover:bg-green-700 rounded-lg text-xs font-bold transition">✅ 승인</button>
-          <button onclick="adminReject('${r.id}')" class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded-lg text-xs font-bold transition">❌ 거절</button>` : ''}
-        ${r.txHash ? `<div class="text-xs text-green-400 mono">TX: ${r.txHash.substring(0,12)}...</div>` : ''}
+      <div class="bg-black/30 rounded-lg px-2 py-1.5 mb-2">
+        <div class="text-gray-400 text-xs mb-0.5">출금 주소</div>
+        <div class="mono text-white break-all">${r.address||'-'}</div>
       </div>
+      <div class="text-gray-500 mb-2">${ago(r.created_at || r.createdAt)}</div>
+      ${r.tx_hash || r.txHash ? `<div class="bg-green-500/10 border border-green-500/20 rounded-lg px-2 py-1 mb-2"><span class="text-green-400">TX: </span><span class="mono text-green-300 break-all">${r.tx_hash||r.txHash}</span></div>` : ''}
+      ${r.note ? `<div class="text-red-400 mb-2">사유: ${r.note}</div>` : ''}
+      ${r.status === 'pending' ? `
+        <div class="space-y-2">
+          <input type="text" id="txInput_${r.id}" placeholder="TX Hash 입력 (실제 트랜잭션 해시 — 선택사항)"
+            class="w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white mono text-xs focus:outline-none focus:border-green-400">
+          <div class="flex gap-2">
+            <button onclick="adminApprove('${r.id}')" class="flex-1 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg text-xs font-bold transition">✅ 승인 처리</button>
+            <button onclick="adminReject('${r.id}')" class="flex-1 py-1.5 bg-red-600/80 hover:bg-red-600 rounded-lg text-xs font-bold transition">❌ 거절</button>
+          </div>
+        </div>` : ''}
     </div>`).join('')
 }
 
 async function adminApprove(id) {
-  const txHash = prompt('TxHash (선택사항):') || ''
+  const txInput = document.getElementById('txInput_' + id)
+  const txHash = txInput ? txInput.value.trim() : ''
+  if (!confirm('출금을 승인하시겠습니까?\nTX Hash: ' + (txHash || '(미입력 — 자동 생성)') )) return
   const data = await api('/api/admin/withdraw/approve', { method:'POST', body: JSON.stringify({requestId:id, txHash}) })
-  if (data.success) { toast('✅ 출금 승인', 'text-green-400'); loadAdmin() }
+  if (data.success) { toast('✅ 출금 승인 완료 (TX: ' + (data.txHash||'').substring(0,12) + '...)', 'text-green-400'); loadAdminWithdraws() }
   else toast('❌ ' + (data.error||'오류'), 'text-red-400')
 }
 
 async function adminReject(id) {
-  const note = prompt('거절 사유:') || ''
-  const data = await api('/api/admin/withdraw/reject', { method:'POST', body: JSON.stringify({requestId:id, note}) })
-  if (data.success) { toast('✅ 출금 거절 처리', 'text-yellow-400'); loadAdmin() }
+  const note = prompt('거절 사유를 입력하세요:')
+  if (note === null) return // 취소
+  const data = await api('/api/admin/withdraw/reject', { method:'POST', body: JSON.stringify({requestId:id, note: note||''}) })
+  if (data.success) { toast('✅ 출금 거절 처리', 'text-yellow-400'); loadAdminWithdraws() }
   else toast('❌ ' + (data.error||'오류'), 'text-red-400')
+}
+
+// ═══════════════════════════════════════════════
+// 수동 입금 처리
+// ═══════════════════════════════════════════════
+let lookupTimer = null
+async function lookupUserForDeposit() {
+  clearTimeout(lookupTimer)
+  lookupTimer = setTimeout(async () => {
+    const username = $('manDepUsername')?.value.trim()
+    const infoEl = $('manDepUserInfo')
+    const idEl = $('manDepUserId')
+    if (!username || username.length < 2) {
+      if (infoEl) infoEl.textContent = '-'
+      if (idEl) idEl.value = ''
+      return
+    }
+    // 유저 검색 (관리자 API 활용)
+    const data = await api('/api/admin/users?search=' + encodeURIComponent(username))
+    const user = data.users?.find(u => u.username === username)
+    if (user) {
+      if (infoEl) infoEl.innerHTML = `<span class="text-green-400 font-bold">✓ ${user.username}</span> <span class="text-gray-400">잔액: ${fmtU(user.balance)}</span>`
+      if (idEl) idEl.value = user.id
+    } else {
+      if (infoEl) infoEl.innerHTML = '<span class="text-red-400">유저 없음</span>'
+      if (idEl) idEl.value = ''
+    }
+  }, 500)
+}
+
+async function adminManualDeposit() {
+  const userId  = $('manDepUserId')?.value
+  const username = $('manDepUsername')?.value.trim()
+  const amount  = parseFloat($('manDepAmount')?.value || '0')
+  const txHash  = $('manDepTxHash')?.value.trim()
+  const network = $('manDepNetwork')?.value || 'manual'
+  const memo    = $('manDepMemo')?.value.trim() || '관리자 수동 입금'
+
+  if (!userId)        { toast('❌ 유저를 먼저 조회하세요', 'text-red-400'); return }
+  if (!amount || amount <= 0) { toast('❌ 입금액을 입력하세요', 'text-red-400'); return }
+  if (!confirm(`${username}에게 ${fmtU(amount)} USDT를 입금 처리하시겠습니까?`)) return
+
+  const data = await api('/api/admin/deposit/manual', {
+    method: 'POST',
+    body: JSON.stringify({ userId, amount, txHash, network, memo })
+  })
+  if (data.success) {
+    toast(`✅ 입금 완료: ${username} +${fmtU(amount)} USDT (잔액: ${fmtU(data.balance)})`, 'text-green-400')
+    // 입력 초기화
+    if ($('manDepUsername')) $('manDepUsername').value = ''
+    if ($('manDepUserId'))   $('manDepUserId').value   = ''
+    if ($('manDepAmount'))   $('manDepAmount').value   = ''
+    if ($('manDepTxHash'))   $('manDepTxHash').value   = ''
+    if ($('manDepMemo'))     $('manDepMemo').value     = ''
+    if ($('manDepUserInfo')) $('manDepUserInfo').textContent = '-'
+    loadAdminDepositLogs()
+    loadAdminUsers()
+  } else toast('❌ ' + (data.error||'오류'), 'text-red-400')
+}
+
+async function loadAdminDepositLogs() {
+  const el = $('adDepositLogList')
+  if (!el) return
+  el.classList.remove('hidden')
+  const data = await api('/api/admin/deposits')
+  if (!data.deposits || data.deposits.length === 0) {
+    el.innerHTML = '<div class="text-gray-500 text-center py-2">입금 내역 없음</div>'
+    return
+  }
+  el.innerHTML = '<div class="font-bold text-xs text-gray-400 mb-2">📋 최근 입금 내역</div>' +
+    data.deposits.slice(0, 20).map(d => `
+      <div class="flex items-center justify-between py-1.5 border-b border-white/5 gap-2">
+        <div class="min-w-0">
+          <span class="font-bold text-white">${d.username}</span>
+          <span class="text-green-400 ml-1">+${fmtU(d.amount)}</span>
+          <span class="text-gray-500 ml-1 text-xs">${d.network||'manual'}</span>
+          ${d.memo ? `<div class="text-gray-500 truncate">${d.memo}</div>` : ''}
+        </div>
+        <div class="shrink-0 text-right">
+          <div class="text-gray-500">${ago(d.created_at)}</div>
+          ${d.tx_hash ? `<div class="mono text-xs text-blue-400">${d.tx_hash.substring(0,10)}...</div>` : ''}
+        </div>
+      </div>`).join('')
+}
+
+// ═══════════════════════════════════════════════
+// 게임 · 운영 설정
+// ═══════════════════════════════════════════════
+async function loadGameSettings() {
+  const data = await api('/api/game-settings')
+  if (!data) return
+  if ($('cfg_payout'))  $('cfg_payout').value  = data.payout  || 1.90
+  if ($('cfg_min_bet')) $('cfg_min_bet').value  = data.minBet  || 0.1
+  if ($('cfg_max_bet')) $('cfg_max_bet').value  = data.maxBet  || 1000
+  if ($('cfg_wd_fee'))  $('cfg_wd_fee').value   = data.withdrawFee || 1
+  if ($('cfg_min_wd'))  $('cfg_min_wd').value   = data.minWithdraw || 1
+  if ($('cfg_bet_req')) $('cfg_bet_req').value   = Math.round((data.betRequirement || 0.5) * 100)
+  // L1/L2는 admin/settings에서 별도 로드
+  const sData = await api('/api/admin/settings')
+  if (sData.settings) {
+    if ($('cfg_l1')) $('cfg_l1').value = parseFloat(sData.settings['game_l1_rate'] || '0.025') * 100
+    if ($('cfg_l2')) $('cfg_l2').value = parseFloat(sData.settings['game_l2_rate'] || '0.010') * 100
+  }
+}
+
+async function saveGameSettings() {
+  const payout  = parseFloat($('cfg_payout')?.value  || '1.9')
+  const minBet  = parseFloat($('cfg_min_bet')?.value || '0.1')
+  const maxBet  = parseFloat($('cfg_max_bet')?.value || '1000')
+  const wdFee   = parseFloat($('cfg_wd_fee')?.value  || '1')
+  const minWd   = parseFloat($('cfg_min_wd')?.value  || '1')
+  const betReq  = parseFloat($('cfg_bet_req')?.value || '50') / 100
+  const l1      = parseFloat($('cfg_l1')?.value      || '2.5') / 100
+  const l2      = parseFloat($('cfg_l2')?.value      || '1.0') / 100
+
+  // 유효성 검사
+  if (payout < 1.1 || payout > 2.0) { toast('❌ 배당률은 1.1x ~ 2.0x 사이여야 합니다', 'text-red-400'); return }
+  if (minBet <= 0 || minBet >= maxBet) { toast('❌ 베팅 한도가 올바르지 않습니다', 'text-red-400'); return }
+
+  const data = await api('/api/admin/settings', {
+    method: 'POST',
+    body: JSON.stringify({ settings: {
+      game_payout:              String(payout),
+      game_min_bet:             String(minBet),
+      game_max_bet:             String(maxBet),
+      game_l1_rate:             String(l1),
+      game_l2_rate:             String(l2),
+      withdraw_fee:             String(wdFee),
+      withdraw_min_amount:      String(minWd),
+      withdraw_bet_requirement: String(betReq),
+    }})
+  })
+  if (data.success) {
+    toast(`✅ 설정 저장 완료 (${data.saved}개 항목)`, 'text-green-400')
+    loadGameSettings() // 다시 로드해서 확인
+  } else toast('❌ 저장 실패: ' + (data.error||'오류'), 'text-red-400')
 }
 
 let adUserPage = 1
