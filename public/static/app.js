@@ -69,8 +69,18 @@ const I18N = {
     err_min_withdraw:'최소 출금액은 1 USDT입니다',err_invalid_addr:'유효하지 않은 출금 주소입니다',
     err_bet_requirement:'출금 조건 미달 (베팅 누적 필요)',err_withdraw_pending:'이미 처리 중인 출금이 있습니다',
     err_max_bet:'최대 베팅은 1000 USDT입니다',
+    err_wrong_password:'현재 비밀번호가 틀렸습니다',err_same_password:'새 비밀번호가 현재와 동일합니다',
+    err_not_found:'요청을 찾을 수 없습니다',
     welcome:'환영합니다',deposit_ok:'입금 완료',withdraw_ok:'출금 신청 완료',
+    cancel_withdraw:'출금 취소',cancel_ok:'출금이 취소되었습니다',
     copied:'복사됨!',win_msg:'🎉 당첨!',lose_msg:'😢 낙첨',
+    change_pw_title:'비밀번호 변경',change_pw_btn:'비밀번호 변경',
+    withdraw_fee_notice:'TRC20 네트워크 수수료 1 USDT 자동 차감',
+    pw_change_ok:'비밀번호가 변경되었습니다',pw_current:'현재 비밀번호',
+    pw_new:'새 비밀번호 (6자 이상)',pw_confirm:'새 비밀번호 확인',
+    pw_mismatch:'새 비밀번호가 일치하지 않습니다',
+    notice_placeholder:'공지 내용 입력...',notice_post:'등록',notice_empty:'공지 없음',
+    notice_delete:'삭제',
   },
   en: {
     blockchain_fair:'Blockchain Fair',login:'Login',register:'Register',logout:'Logout',
@@ -139,8 +149,18 @@ const I18N = {
     err_min_withdraw:'Minimum withdrawal is 1 USDT',err_invalid_addr:'Invalid withdrawal address',
     err_bet_requirement:'Bet requirement not met',err_withdraw_pending:'Withdrawal already pending',
     err_max_bet:'Maximum bet is 1000 USDT',
+    err_wrong_password:'Current password is incorrect',err_same_password:'New password is same as current',
+    err_not_found:'Request not found',
     welcome:'Welcome',deposit_ok:'Deposit successful',withdraw_ok:'Withdrawal requested',
+    cancel_withdraw:'Cancel Withdraw',cancel_ok:'Withdrawal cancelled',
     copied:'Copied!',win_msg:'🎉 WIN!',lose_msg:'😢 LOSE',
+    change_pw_title:'Change Password',change_pw_btn:'Change Password',
+    withdraw_fee_notice:'TRC20 network fee 1 USDT auto-deducted',
+    pw_change_ok:'Password changed successfully',pw_current:'Current password',
+    pw_new:'New password (min 6 chars)',pw_confirm:'Confirm new password',
+    pw_mismatch:'New passwords do not match',
+    notice_placeholder:'Enter notice content...',notice_post:'Post',notice_empty:'No notices',
+    notice_delete:'Delete',
   },
   zh: {
     blockchain_fair:'区块链公平',login:'登录',register:'注册',logout:'退出',
@@ -209,8 +229,18 @@ const I18N = {
     err_min_withdraw:'最低提款为1 USDT',err_invalid_addr:'无效提款地址',
     err_bet_requirement:'未满足投注条件',err_withdraw_pending:'已有待处理提款',
     err_max_bet:'最高投注为1000 USDT',
+    err_wrong_password:'当前密码不正确',err_same_password:'新密码与当前密码相同',
+    err_not_found:'请求未找到',
     welcome:'欢迎',deposit_ok:'存款成功',withdraw_ok:'提款申请已提交',
+    cancel_withdraw:'取消提款',cancel_ok:'提款已取消',
     copied:'已复制!',win_msg:'🎉 赢了!',lose_msg:'😢 输了',
+    change_pw_title:'修改密码',change_pw_btn:'修改密码',
+    withdraw_fee_notice:'TRC20网络手续费1 USDT自动扣除',
+    pw_change_ok:'密码已修改',pw_current:'当前密码',
+    pw_new:'新密码 (至少6位)',pw_confirm:'确认新密码',
+    pw_mismatch:'两次输入的密码不一致',
+    notice_placeholder:'输入公告内容...',notice_post:'发布',notice_empty:'暂无公告',
+    notice_delete:'删除',
   },
   ja: {
     blockchain_fair:'ブロックチェーン公正',login:'ログイン',register:'登録',logout:'ログアウト',
@@ -279,8 +309,18 @@ const I18N = {
     err_min_withdraw:'最低出金は1 USDTです',err_invalid_addr:'無効な出金アドレスです',
     err_bet_requirement:'ベット条件未達',err_withdraw_pending:'処理中の出金があります',
     err_max_bet:'最高ベットは1000 USDTです',
+    err_wrong_password:'現在のパスワードが間違っています',err_same_password:'新しいパスワードが現在と同じです',
+    err_not_found:'リクエストが見つかりません',
     welcome:'ようこそ',deposit_ok:'入金完了',withdraw_ok:'出金申請完了',
+    cancel_withdraw:'出金取消',cancel_ok:'出金がキャンセルされました',
     copied:'コピー済み!',win_msg:'🎉 当選!',lose_msg:'😢 落選',
+    change_pw_title:'パスワード変更',change_pw_btn:'パスワード変更',
+    withdraw_fee_notice:'TRC20ネットワーク手数料1 USDT自動控除',
+    pw_change_ok:'パスワードが変更されました',pw_current:'現在のパスワード',
+    pw_new:'新しいパスワード (6文字以上)',pw_confirm:'新しいパスワードの確認',
+    pw_mismatch:'新しいパスワードが一致しません',
+    notice_placeholder:'お知らせ内容を入力...',notice_post:'投稿',notice_empty:'お知らせなし',
+    notice_delete:'削除',
   }
 }
 
@@ -519,6 +559,12 @@ async function refreshMe() {
 function addBet(n) { const el=$('betAmt'); el.value = Math.round((parseFloat(el.value||0)+n)*100)/100 }
 function clearBet() { $('betAmt').value = '' }
 function maxBet()  { if (me) $('betAmt').value = Math.min(me.balance, 1000) }
+// 1/4, 1/2 비율 베팅
+function fracBet(frac) {
+  if (!me) return
+  const val = Math.round(Math.min(me.balance, 1000) * frac * 100) / 100
+  $('betAmt').value = val > 0 ? val : ''
+}
 
 async function doBet(choice) {
   if (!me) { showTab('login'); return }
@@ -619,12 +665,14 @@ async function loadMypage() {
         <div class="flex items-center justify-between p-2 bg-black/20 rounded-lg">
           <div>
             <div class="text-xs font-bold">${fmtU(r.amount)} USDT</div>
-            <div class="text-xs text-gray-500 mono">${r.address.substring(0,12)}...</div>
+            <div class="text-xs text-gray-500 mono">${r.address ? r.address.substring(0,12)+'...' : '-'}</div>
+            ${r.note ? `<div class="text-xs text-red-400">${r.note}</div>` : ''}
           </div>
-          <div class="text-right">
+          <div class="text-right flex flex-col items-end gap-1">
             <span class="px-2 py-0.5 rounded-full text-xs status-${r.status}">${r.status}</span>
-            <div class="text-xs text-gray-500">${ago(r.createdAt)}</div>
-            ${r.txHash ? `<div class="text-xs text-green-400 mono">${r.txHash.substring(0,10)}...</div>` : ''}
+            <div class="text-xs text-gray-500">${ago(r.created_at || r.createdAt)}</div>
+            ${r.tx_hash || r.txHash ? `<div class="text-xs text-green-400 mono">${(r.tx_hash||r.txHash).substring(0,10)}...</div>` : ''}
+            ${r.status === 'pending' ? `<button onclick="cancelWithdraw('${r.id}')" class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition">${t('cancel_withdraw')}</button>` : ''}
           </div>
         </div>`).join('')
     }
@@ -701,10 +749,56 @@ async function doWithdraw() {
   $('wdAddr').value = ''; $('wdAmt').value = ''
 }
 
+// 출금 취소 (pending 상태만)
+async function cancelWithdraw(requestId) {
+  if (!confirm('출금 취소 하시겠습니까? 수수료 포함 금액이 반환됩니다.')) return
+  const data = await api('/api/withdraw/cancel', { method:'POST', body: JSON.stringify({requestId}) })
+  if (data.error) { toast('❌ ' + (data.error === 'NOT_FOUND_OR_PROCESSED' ? t('err_not_found') : data.error), 'text-red-400'); return }
+  me.balance = data.balance
+  updateUI()
+  loadMypage()
+  toast('✅ ' + t('cancel_ok') + ' (환불: ' + fmtU(data.refunded) + ' USDT)', 'text-green-400')
+}
+
 // ═══════════════════════════════════════════════
-// 대시보드
+// 비밀번호 변경
 // ═══════════════════════════════════════════════
-async function loadDashboard() {
+async function doChangePassword() {
+  const currentPassword = $('cpCurrent').value
+  const newPassword     = $('cpNew').value
+  const confirmPassword = $('cpConfirm').value
+  $('cpErr').classList.add('hidden'); $('cpOk').classList.add('hidden')
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    $('cpErr').textContent = t('err_unauth'); $('cpErr').classList.remove('hidden'); return
+  }
+  if (newPassword !== confirmPassword) {
+    $('cpErr').textContent = t('pw_mismatch'); $('cpErr').classList.remove('hidden'); return
+  }
+
+  const data = await api('/api/change-password', { method:'POST', body: JSON.stringify({currentPassword, newPassword}) })
+  if (data.error) {
+    const eMap = { WRONG_PASSWORD: 'err_wrong_password', SAME_PASSWORD: 'err_same_password', PASSWORD_SHORT: 'err_password_short' }
+    $('cpErr').textContent = t(eMap[data.error] || 'err_unauth')
+    $('cpErr').classList.remove('hidden'); return
+  }
+  $('cpOk').classList.remove('hidden')
+  $('cpCurrent').value = ''; $('cpNew').value = ''; $('cpConfirm').value = ''
+  toast('🔐 ' + t('pw_change_ok'), 'text-green-400')
+}
+
+// ═══════════════════════════════════════════════
+// 대시보드 (Chart.js + 페이지네이션)
+// ═══════════════════════════════════════════════
+let histPage = 1
+let histTotalPages = 1
+let oddEvenChartInstance = null
+
+async function loadDashboard(page) {
+  page = page || histPage
+  if (page < 1 || page > histTotalPages) return
+  histPage = page
+
   const data = await api('/api/stats')
   if (!data.totalGames && data.totalGames !== 0) return
 
@@ -729,23 +823,56 @@ async function loadDashboard() {
   if ($('dOddPct'))  $('dOddPct').textContent  = oddPct + '%'
   if ($('dEvenPct')) $('dEvenPct').textContent = evenPct + '%'
 
-  // 히스토리 테이블
-  const d2 = await api('/api/history')
+  // Chart.js 도넛 차트 업데이트
+  const chartCanvas = $('oddEvenChart')
+  if (chartCanvas && typeof Chart !== 'undefined') {
+    if (oddEvenChartInstance) oddEvenChartInstance.destroy()
+    oddEvenChartInstance = new Chart(chartCanvas, {
+      type: 'doughnut',
+      data: {
+        labels: [t('odd'), t('even')],
+        datasets: [{
+          data: [odd || 1, even || 1],
+          backgroundColor: ['rgba(229,62,62,0.7)', 'rgba(49,130,206,0.7)'],
+          borderColor: ['rgba(229,62,62,1)', 'rgba(49,130,206,1)'],
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#9ca3af', font: { size: 12 } } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}회 (${total > 0 ? (ctx.raw/total*100).toFixed(1) : 50}%)` } }
+        }
+      }
+    })
+  }
+
+  // 히스토리 테이블 (페이지네이션)
+  const d2 = await api('/api/history?page=' + histPage)
+  histTotalPages = d2.totalPages || 1
   const tbl = $('dHistTbl')
   if (tbl && d2.history) {
     if (d2.history.length === 0) {
       tbl.innerHTML = `<tr><td colspan="5" class="text-center text-gray-500 py-3">${t('no_record')}</td></tr>`
     } else {
-      tbl.innerHTML = d2.history.slice(0,20).map(h => `
+      tbl.innerHTML = d2.history.map(h => `
         <tr class="border-b border-white/5 hover:bg-white/5">
           <td class="py-1.5 px-2 font-bold">#${h.roundId}</td>
           <td class="py-1.5 px-2"><span class="px-2 py-0.5 rounded-full text-xs ${h.result==='odd'?'bg-red-500/20 text-red-400':'bg-blue-500/20 text-blue-400'}">${h.result==='odd'?t('odd'):t('even')}</span></td>
-          <td class="py-1.5 px-2 mono text-gray-400 text-xs">${h.hashValue.substring(0,16)}...</td>
+          <td class="py-1.5 px-2 mono text-gray-400 text-xs">${h.hashValue ? h.hashValue.substring(0,16)+'...' : '-'}</td>
           <td class="py-1.5 px-2 text-right usdt">${fmtU(h.totalBets)}</td>
           <td class="py-1.5 px-2 text-right text-gray-500">${ago(h.timestamp)}</td>
         </tr>`).join('')
     }
   }
+
+  // 페이지네이션 버튼
+  const pageInfo = $('histPageInfo')
+  if (pageInfo) pageInfo.textContent = histPage + ' / ' + histTotalPages
+  const prevBtn = $('histPrevBtn'), nextBtn = $('histNextBtn')
+  if (prevBtn) prevBtn.disabled = histPage <= 1
+  if (nextBtn) nextBtn.disabled = histPage >= histTotalPages
 }
 
 // ═══════════════════════════════════════════════
@@ -846,12 +973,13 @@ async function loadAdmin() {
   if (data.error) return
 
   if ($('adTotalUsers')) $('adTotalUsers').textContent = data.totalUsers
-  if ($('adTotalBet'))   $('adTotalBet').textContent   = fmtU(data.totalBetAmount)
+  if ($('adTodayBet'))   $('adTodayBet').textContent   = fmtU(data.todayBetAmount || 0)
   if ($('adPendingWd'))  $('adPendingWd').textContent  = data.pendingWithdrawCount
-  if ($('adPendingAmt')) $('adPendingAmt').textContent = fmtU(data.pendingWithdrawAmount)
+  if ($('adNewUsers'))   $('adNewUsers').textContent   = data.newUsersToday || 0
 
   loadAdminWithdraws()
   loadAdminUsers()
+  loadAdminNotices()
 }
 
 async function loadAdminWithdraws() {
@@ -893,27 +1021,50 @@ async function adminReject(id) {
   else toast('❌ ' + (data.error||'오류'), 'text-red-400')
 }
 
-async function loadAdminUsers() {
-  const data = await api('/api/admin/users')
+let adUserPage = 1
+let adUserTotalPages = 1
+
+async function loadAdminUsers(page) {
+  page = page || adUserPage
+  if (page < 1 || page > adUserTotalPages) return
+  adUserPage = page
+
+  const search = $('userSearchInput')?.value || ''
+  const data = await api('/api/admin/users?search=' + encodeURIComponent(search) + '&page=' + adUserPage)
   const tbl = $('adUserTable')
   if (!tbl || !data.users) return
-  tbl.innerHTML = data.users.map(u => `
-    <tr class="border-b border-white/5 hover:bg-white/5">
-      <td class="py-1.5 px-2">
-        <div class="font-bold text-xs">${u.username}</div>
-        <div class="text-xs text-gray-500">${u.isAdmin?'👑 관리자':''} ${u.isBanned?'🚫 차단':''}</div>
-      </td>
-      <td class="py-1.5 px-2 text-right usdt text-xs">${fmtU(u.balance)}</td>
-      <td class="py-1.5 px-2 text-right text-xs text-green-400">${fmtU(u.totalDeposit)}</td>
-      <td class="py-1.5 px-2 text-right text-xs text-blue-400">${fmtU(u.totalBetAmount)}</td>
-      <td class="py-1.5 px-2 text-xs">${u.isBanned?'<span class="text-red-400">차단</span>':'<span class="text-green-400">정상</span>'}</td>
-      <td class="py-1.5 px-2">
-        <div class="flex gap-1">
-          <button onclick="showBalModal('${u.id}','${u.username}')" class="px-2 py-1 bg-yellow-600/30 rounded text-xs hover:bg-yellow-600/50 transition">💰</button>
-          <button onclick="adminBan('${u.id}',${!u.isBanned})" class="px-2 py-1 ${u.isBanned?'bg-green-600/30':'bg-red-600/30'} rounded text-xs hover:opacity-80 transition">${u.isBanned?'해제':'차단'}</button>
-        </div>
-      </td>
-    </tr>`).join('')
+
+  adUserTotalPages = data.totalPages || 1
+
+  if (data.users.length === 0) {
+    tbl.innerHTML = '<tr><td colspan="6" class="text-center text-gray-500 py-3">유저 없음</td></tr>'
+  } else {
+    tbl.innerHTML = data.users.map(u => `
+      <tr class="border-b border-white/5 hover:bg-white/5">
+        <td class="py-1.5 px-2">
+          <div class="font-bold text-xs">${u.username}</div>
+          <div class="text-xs text-gray-500">${u.isAdmin?'👑 관리자':''} ${u.isBanned?'🚫 차단':''}</div>
+          <div class="text-xs text-gray-600">${u.lastIp||''}</div>
+        </td>
+        <td class="py-1.5 px-2 text-right usdt text-xs">${fmtU(u.balance)}</td>
+        <td class="py-1.5 px-2 text-right text-xs text-green-400">${fmtU(u.totalDeposit)}</td>
+        <td class="py-1.5 px-2 text-right text-xs text-blue-400">${fmtU(u.totalBetAmount)}</td>
+        <td class="py-1.5 px-2 text-xs">${u.isBanned?'<span class="text-red-400">차단</span>':'<span class="text-green-400">정상</span>'}</td>
+        <td class="py-1.5 px-2">
+          <div class="flex gap-1">
+            <button onclick="showBalModal('${u.id}','${u.username}')" class="px-2 py-1 bg-yellow-600/30 rounded text-xs hover:bg-yellow-600/50 transition">💰</button>
+            <button onclick="adminBan('${u.id}',${!u.isBanned})" class="px-2 py-1 ${u.isBanned?'bg-green-600/30':'bg-red-600/30'} rounded text-xs hover:opacity-80 transition">${u.isBanned?'해제':'차단'}</button>
+          </div>
+        </td>
+      </tr>`).join('')
+  }
+
+  // 페이지네이션 업데이트
+  const pageInfo = $('adUserPageInfo')
+  if (pageInfo) pageInfo.textContent = adUserPage + ' / ' + adUserTotalPages
+  const prevBtn = $('adUserPrevBtn'), nextBtn = $('adUserNextBtn')
+  if (prevBtn) prevBtn.disabled = adUserPage <= 1
+  if (nextBtn) nextBtn.disabled = adUserPage >= adUserTotalPages
 }
 
 function showBalModal(userId, username) {
@@ -938,6 +1089,65 @@ async function adminAdjBal(type) {
 async function adminBan(userId, ban) {
   const data = await api('/api/admin/user/ban', { method:'POST', body: JSON.stringify({userId, ban}) })
   if (data.success) { toast(ban ? '🚫 차단 처리' : '✅ 차단 해제', ban?'text-red-400':'text-green-400'); loadAdminUsers() }
+}
+
+// ═══════════════════════════════════════════════
+// 공지사항
+// ═══════════════════════════════════════════════
+async function loadNotices() {
+  const data = await api('/api/notices')
+  const banner = $('noticeBanner')
+  const list   = $('noticeList')
+  if (!banner || !list) return
+  if (!data.notices || data.notices.length === 0) {
+    banner.classList.add('hidden'); return
+  }
+  const colorMap = { warning:'bg-yellow-500/20 border-yellow-500/40 text-yellow-300', danger:'bg-red-500/20 border-red-500/40 text-red-300', info:'bg-blue-500/20 border-blue-500/40 text-blue-300' }
+  list.innerHTML = data.notices.map(n => {
+    const cls = colorMap[n.type] || colorMap.info
+    return `<div class="border-b border-white/5 last:border-0 px-4 py-2 flex items-center justify-between gap-2 ${cls}">
+      <span class="text-xs font-bold">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'} ${n.content}</span>
+      <span class="text-xs opacity-60 shrink-0">${ago(n.created_at)}</span>
+    </div>`
+  }).join('')
+  banner.classList.remove('hidden')
+  banner.className = 'w-full border-b border-white/10'
+}
+
+async function loadAdminNotices() {
+  const data = await api('/api/notices')
+  const el = $('adNoticeList')
+  if (!el) return
+  if (!data.notices || data.notices.length === 0) {
+    el.innerHTML = `<div class="text-gray-500 text-center py-2 text-xs">${t('notice_empty')}</div>`
+    return
+  }
+  el.innerHTML = data.notices.map(n => `
+    <div class="flex items-center justify-between p-2 bg-black/20 rounded-lg">
+      <div class="flex items-center gap-2">
+        <span class="text-xs">${n.type==='danger'?'🚨':n.type==='warning'?'⚠️':'ℹ️'}</span>
+        <span class="text-xs text-white">${n.content}</span>
+      </div>
+      <button onclick="deleteNotice('${n.id}')" class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition shrink-0">${t('notice_delete')}</button>
+    </div>`).join('')
+}
+
+async function postNotice() {
+  const content = $('noticeInput')?.value.trim()
+  const type    = $('noticeType')?.value || 'info'
+  if (!content) return
+  const data = await api('/api/admin/notice', { method:'POST', body: JSON.stringify({content, type}) })
+  if (data.success) {
+    if ($('noticeInput')) $('noticeInput').value = ''
+    toast('📢 공지 등록 완료', 'text-green-400')
+    loadAdminNotices()
+    loadNotices()
+  } else toast('❌ ' + (data.error||'오류'), 'text-red-400')
+}
+
+async function deleteNotice(noticeId) {
+  const data = await api('/api/admin/notice/delete', { method:'POST', body: JSON.stringify({noticeId}) })
+  if (data.success) { toast('🗑️ 공지 삭제', 'text-yellow-400'); loadAdminNotices(); loadNotices() }
 }
 
 // ═══════════════════════════════════════════════
@@ -974,10 +1184,12 @@ async function init() {
   loadRound()
   loadFeed()
   loadDashboard()
+  loadNotices()  // 공지 배너 로드
 
   setInterval(loadRound, 1000)
   setInterval(loadFeed,  4000)
   setInterval(loadDashboard, 30000)
+  setInterval(loadNotices, 60000)  // 1분마다 공지 갱신
 }
 
 init()
