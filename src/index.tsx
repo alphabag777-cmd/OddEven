@@ -1993,21 +1993,19 @@ select option{background:#1a1a2e;color:#fff}
     <button onclick="showTab('dashboard')"   id="t-dashboard"   class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_dashboard">📊 통계</button>
     <button onclick="showTab('leaderboard')" id="t-leaderboard" class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0">🏆 랭킹</button>
     <button onclick="showTab('faq')"         id="t-faq"         class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
-    <button onclick="showTab('referral')"    id="t-referral"    class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0 hidden sm:inline-block" data-i18n="tab_referral">👥 추천</button>
-    <button onclick="showTab('verify')"      id="t-verify"      class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0 hidden sm:inline-block" data-i18n="tab_verify">🔍 검증</button>
     <button onclick="showTab('mypage')"      id="t-mypage"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_mypage">👤 MY</button>
     <button onclick="showTab('wallet')"      id="t-wallet"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_wallet">💰 지갑</button>
+    <button onclick="showTab('referral')"    id="t-referral"    class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천</button>
+    <button onclick="showTab('verify')"      id="t-verify"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
     <button onclick="showTab('support')"     id="t-support"     class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
-    <button onclick="showTab('login')"       id="t-login"       class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="login">🔐 로그인</button>
-    <button onclick="showTab('register')"    id="t-register"    class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="register">✍️ 가입</button>
     <button onclick="showTab('admin')"       id="t-admin"       class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0 text-yellow-400">⚙️ 관리자</button>
   </div>
-  <!-- 2단: 모바일 전용 (sm 미만) - 1단에 hidden된 탭들 -->
+  <!-- 2단: 모바일 전용 (sm 미만) -->
   <div id="mobileSubNav" class="sm:hidden border-t border-white/5 bg-black/20 px-2 flex whitespace-nowrap overflow-x-auto">
-    <button onclick="showTab('referral')"    id="t-referral-m"  class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천</button>
-    <button onclick="showTab('verify')"      id="t-verify-m"    class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
     <button onclick="showTab('mypage')"      id="t-mypage-m"    class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_mypage">👤 MY</button>
     <button onclick="showTab('wallet')"      id="t-wallet-m"    class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_wallet">💰 지갑</button>
+    <button onclick="showTab('referral')"    id="t-referral-m"  class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천</button>
+    <button onclick="showTab('verify')"      id="t-verify-m"    class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
     <button onclick="showTab('support')"     id="t-support-m"   class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
   </div>
 </nav>

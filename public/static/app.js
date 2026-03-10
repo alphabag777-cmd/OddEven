@@ -646,28 +646,29 @@ function showTab(name) {
     roomStatusInterval = null
   }
 
+  // 모든 패널 숨기기 / 선택 패널 보이기
   const tabs = ['game','mypage','wallet','dashboard','referral','verify','leaderboard','faq','support','login','register','admin']
   tabs.forEach(tab => {
     const p  = $('p-' + tab)
-    const b1 = $('t-' + tab)        // 1단 버튼
-    const b2 = $('t-' + tab + '-m') // 2단 모바일 버튼 (있는 경우만)
+    const b1 = $('t-' + tab)        // 1단 버튼 (없을 수 있음)
+    const b2 = $('t-' + tab + '-m') // 2단 모바일 버튼 (없을 수 있음)
     if (p)  p.classList.toggle('hidden', tab !== name)
     if (b1) { b1.classList.toggle('tab-on', tab === name); b1.classList.toggle('tab-off', tab !== name) }
     if (b2) { b2.classList.toggle('tab-on', tab === name); b2.classList.toggle('tab-off', tab !== name) }
   })
 
-  // 각 탭 데이터 로드 (game 탭은 showRoomSelect에서 처리)
+  // 각 탭 데이터 로드
   try {
     if (name === 'dashboard')   loadDashboard()
-    if (name === 'referral')    loadReferral()
-    if (name === 'verify')      loadVerifyHist()
-    if (name === 'wallet')      loadWallet()
-    if (name === 'mypage')      loadMypage()
-    if (name === 'admin')       loadAdmin()
-    if (name === 'faq')         loadFAQ('')
-    if (name === 'support')     loadSupport()
-    if (name === 'leaderboard') loadLeaderboard('total_bet')
-    if (name === 'game')        showRoomSelect()
+    else if (name === 'referral')    loadReferral()
+    else if (name === 'verify')      loadVerifyHist()
+    else if (name === 'wallet')      loadWallet()
+    else if (name === 'mypage')      loadMypage()
+    else if (name === 'admin')       loadAdmin()
+    else if (name === 'faq')         loadFAQ('')
+    else if (name === 'support')     loadSupport()
+    else if (name === 'leaderboard') loadLeaderboard('total_bet')
+    else if (name === 'game')        showRoomSelect()
   } catch(e) {
     console.error('showTab error:', e)
   }
@@ -675,33 +676,46 @@ function showTab(name) {
 
 function updateUI() {
   const loggedIn = !!me
-  $('hdrGuest').classList.toggle('hidden', loggedIn)
-  $('hdrUser').classList.toggle('hidden', !loggedIn)
-  $('hdrUser').classList.toggle('flex', loggedIn)
-  const loginTabs = ['login','register']
-  loginTabs.forEach(t => { const b = $('t-'+t); if (b) b.classList.toggle('hidden', loggedIn) })
-  const userTabs = ['mypage','wallet','support']
-  userTabs.forEach(t => {
-    ['t-'+t, 't-'+t+'-m'].forEach(id => {
+
+  // 헤더 로그인/로그아웃 영역
+  const hdrGuest = $('hdrGuest')
+  const hdrUser  = $('hdrUser')
+  if (hdrGuest) hdrGuest.classList.toggle('hidden', loggedIn)
+  if (hdrUser)  { hdrUser.classList.toggle('hidden', !loggedIn); hdrUser.classList.toggle('flex', loggedIn) }
+
+  // 로그인 전용 탭 버튼 (로그인 후 숨김) - 탭 네비에 없을 수 있으므로 null 체크
+  const loginOnlyTabs = ['login','register']
+  loginOnlyTabs.forEach(tabName => {
+    ['t-'+tabName, 't-'+tabName+'-m'].forEach(id => {
+      const b = $(id); if (b) b.classList.toggle('hidden', loggedIn)
+    })
+  })
+
+  // 로그인 후 표시 탭 버튼
+  const userOnlyTabs = ['mypage','wallet','support','referral','verify']
+  userOnlyTabs.forEach(tabName => {
+    ['t-'+tabName, 't-'+tabName+'-m'].forEach(id => {
       const b = $(id); if (b) b.classList.toggle('hidden', !loggedIn)
     })
   })
+
+  // 관리자 탭
   const adminTab = $('t-admin')
   if (adminTab) adminTab.classList.toggle('hidden', !(me && me.isAdmin))
 
   if (me) {
     if ($('hdrName')) $('hdrName').textContent = me.username
     if ($('hdrBal'))  $('hdrBal').textContent  = fmtU(me.balance) + ' USDT'
-    $('sideGuest').classList.add('hidden')
-    $('sideUser').classList.remove('hidden')
+    const sg = $('sideGuest'); if (sg) sg.classList.add('hidden')
+    const su = $('sideUser');  if (su) su.classList.remove('hidden')
     if ($('siBal'))  $('siBal').textContent  = fmtU(me.balance) + ' USDT'
     if ($('siRef'))  $('siRef').textContent  = fmtU(me.referralEarnings || 0) + ' USDT'
     if ($('siL1'))   $('siL1').textContent   = me.level1Count || 0
     if ($('siL2'))   $('siL2').textContent   = me.level2Count || 0
     if ($('siCode')) $('siCode').textContent = me.referralCode || '-'
   } else {
-    $('sideGuest').classList.remove('hidden')
-    $('sideUser').classList.add('hidden')
+    const sg = $('sideGuest'); if (sg) sg.classList.remove('hidden')
+    const su = $('sideUser');  if (su) su.classList.add('hidden')
     myBet = null
   }
 }
@@ -2199,7 +2213,8 @@ async function loadNotices() {
   const banner = $('noticeBanner')
   const list   = $('noticeList')
   if (!banner || !list) return
-  if (!data.notices || data.notices.length === 0) {
+  const data = await api('/api/notices')
+  if (!data || !data.notices || data.notices.length === 0) {
     banner.classList.add('hidden'); return
   }
   const colorMap = { warning:'bg-yellow-500/20 border-yellow-500/40 text-yellow-300', danger:'bg-red-500/20 border-red-500/40 text-red-300', info:'bg-blue-500/20 border-blue-500/40 text-blue-300' }
