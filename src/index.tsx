@@ -2141,11 +2141,6 @@ const HTML = `<!DOCTYPE html>
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>🎲 ODD/EVEN - Blockchain Fair Game</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-// Tailwind 설정: preflight 비활성화
-tailwind.config={corePlugins:{preflight:false}}
-</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
@@ -2209,8 +2204,6 @@ select option{background:#1a1a2e;color:#fff}
 .attach-item button{color:#fc8181;background:none;border:none;cursor:pointer;font-size:12px;line-height:1}
 /* 공지 내용 렌더링 */
 .notice-content p{margin:0;line-height:1.5}
-/* Tailwind .hidden 보장 - Tailwind CDN 로드 전/후 모두 동작 */
-.hidden{display:none!important}
 /* 모달 오버레이 - flex+hidden 충돌 방지용 */
 .modal-overlay{display:none;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex!important}
@@ -2222,49 +2215,439 @@ select option{background:#1a1a2e;color:#fff}
 .inquiry-content ul,.inquiry-content ol{padding-left:20px;margin:4px 0}
 /* 탭 패널 스크롤 여백 (sticky 헤더+네비 가림 방지) */
 [id^="p-"]{scroll-margin-top:110px}
-/* Tailwind 보완: 기본 유틸 직접 정의 */
-*,::before,::after{box-sizing:border-box}
-button,input,select,textarea{font-family:inherit}
-.text-white{color:#fff!important}
-.flex{display:flex!important}
-.block{display:block!important}
-.inline-block{display:inline-block!important}
-.grid{display:grid!important}
-.overflow-x-auto{overflow-x:auto}
-.overflow-hidden{overflow:hidden}
-.w-full{width:100%}
-.max-w-sm{max-width:24rem}
-.max-w-2xl{max-width:42rem}
-.max-w-6xl{max-width:72rem}
-.mx-auto{margin-left:auto;margin-right:auto}
+
+
+/* ═══ Tailwind 대체 순수 CSS (자동 생성) ═══ */
+/* === Layout === */
+.block{display:block}
+.inline-block{display:inline-block}
+.flex{display:flex}
+.grid{display:grid}
+.hidden{display:none!important}
+.fixed{position:fixed}
+.absolute{position:absolute}
+.relative{position:relative}
 .sticky{position:sticky}
+.inset-0{top:0;right:0;bottom:0;left:0}
 .top-0{top:0}
-.z-50{z-index:50}
+.top-3{top:.75rem}
+.bottom-5{bottom:1.25rem}
+.right-3{right:.75rem}
+.right-4{right:1rem}
 .z-40{z-index:40}
-.cursor-pointer{cursor:pointer}
-.transition{transition:all .15s ease}
-.border-b{border-bottom-width:1px}
-.px-3{padding-left:.75rem;padding-right:.75rem}
-.py-4{padding-top:1rem;padding-bottom:1rem}
-.text-sm{font-size:.875rem;line-height:1.25rem}
-.text-xs{font-size:.75rem;line-height:1rem}
-.font-bold{font-weight:700}
-.font-black{font-weight:900}
-.rounded-xl{border-radius:.75rem}
-.rounded-2xl{border-radius:1rem}
-.space-y-4>*+*{margin-top:1rem}
-.space-y-3>*+*{margin-top:.75rem}
-.gap-3{gap:.75rem}
-.gap-2{gap:.5rem}
-.gap-1{gap:.25rem}
+.z-50{z-index:50}
+
+/* === Flexbox === */
+.flex-1{flex:1 1 0%}
+.flex-col{flex-direction:column}
+.flex-wrap{flex-wrap:wrap}
 .items-center{align-items:center}
+.items-start{align-items:flex-start}
+.items-end{align-items:flex-end}
 .justify-between{justify-content:space-between}
 .justify-center{justify-content:center}
+.shrink-0{flex-shrink:0}
+
+/* === Grid === */
+.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}
+.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.col-span-2{grid-column:span 2/span 2}
+
+/* === Gap === */
+.gap-0.5{gap:0.125rem}
+.gap-1{gap:0.25rem}
+.gap-1.5{gap:0.375rem}
+.gap-2{gap:0.5rem}
+.gap-3{gap:0.75rem}
+.gap-4{gap:1rem}
+
+/* === Spacing === */
+.space-y-0.5>*+*{margin-top:0.125rem}
+.space-y-1>*+*{margin-top:0.25rem}
+.space-y-1.5>*+*{margin-top:0.375rem}
+.space-y-2>*+*{margin-top:0.5rem}
+.space-y-2.5>*+*{margin-top:0.625rem}
+.space-y-3>*+*{margin-top:0.75rem}
+.space-y-4>*+*{margin-top:1rem}
+
+/* === Width === */
+.w-full{width:100%}
+.w-1.5{width:0.375rem}
+.w-3{width:0.75rem}
+.w-4{width:1rem}
+.w-6{width:1.5rem}
+.w-10{width:2.5rem}
+.w-12{width:3rem}
+.w-14{width:3.5rem}
+.w-16{width:4rem}
+.w-20{width:5rem}
+.w-28{width:7rem}
+.w-32{width:8rem}
+
+/* === Height === */
+.h-full{height:100%}
+.h-1.5{height:0.375rem}
+.h-2{height:0.5rem}
+.h-2.5{height:0.625rem}
+.h-3{height:0.75rem}
+.h-4{height:1rem}
+.h-6{height:1.5rem}
+
+/* === Min/Max Width === */
+.min-w-0{min-width:0}
+.max-w-xs{max-width:20rem}
+.max-w-sm{max-width:24rem}
+.max-w-md{max-width:28rem}
+.max-w-lg{max-width:32rem}
+.max-w-2xl{max-width:42rem}
+.max-w-6xl{max-width:72rem}
+.max-w-none{max-width:none}
+.max-w-\[120px\]{max-width:120px}
+
+/* === Max Height === */
+.max-h-52{max-height:13rem}
+.max-h-64{max-height:16rem}
+.max-h-80{max-height:20rem}
+.max-h-\[85vh\]{max-height:85vh}
+.max-h-\[90vh\]{max-height:90vh}
+
+/* === Margin === */
+.mx-auto{margin-left:auto;margin-right:auto}
+.my-1{margin-top:0.25rem;margin-bottom:0.25rem}
+.mt-0.5{margin-top:0.125rem}
+.mb-0.5{margin-bottom:0.125rem}
+.mt-1{margin-top:0.25rem}
+.mb-1{margin-bottom:0.25rem}
+.mt-1.5{margin-top:0.375rem}
+.mb-1.5{margin-bottom:0.375rem}
+.mt-2{margin-top:0.5rem}
+.mb-2{margin-bottom:0.5rem}
+.mt-3{margin-top:0.75rem}
+.mb-3{margin-bottom:0.75rem}
+.mt-4{margin-top:1rem}
+.mb-4{margin-bottom:1rem}
+.mt-5{margin-top:1.25rem}
+.mb-5{margin-bottom:1.25rem}
+.mt-6{margin-top:1.5rem}
+.mb-6{margin-bottom:1.5rem}
+.ml-1{margin-left:0.25rem}
+.ml-2{margin-left:0.5rem}
+.ml-auto{margin-left:auto}
+.mr-1{margin-right:0.25rem}
+
+/* === Padding === */
+.px-1{padding-left:0.25rem;padding-right:0.25rem}
+.py-1{padding-top:0.25rem;padding-bottom:0.25rem}
+.px-1.5{padding-left:0.375rem;padding-right:0.375rem}
+.py-1.5{padding-top:0.375rem;padding-bottom:0.375rem}
+.px-2{padding-left:0.5rem;padding-right:0.5rem}
+.py-2{padding-top:0.5rem;padding-bottom:0.5rem}
+.px-2.5{padding-left:0.625rem;padding-right:0.625rem}
+.py-2.5{padding-top:0.625rem;padding-bottom:0.625rem}
+.px-3{padding-left:0.75rem;padding-right:0.75rem}
+.py-3{padding-top:0.75rem;padding-bottom:0.75rem}
+.px-4{padding-left:1rem;padding-right:1rem}
+.py-4{padding-top:1rem;padding-bottom:1rem}
+.px-5{padding-left:1.25rem;padding-right:1.25rem}
+.py-5{padding-top:1.25rem;padding-bottom:1.25rem}
+.px-6{padding-left:1.5rem;padding-right:1.5rem}
+.py-6{padding-top:1.5rem;padding-bottom:1.5rem}
+.p-0.5{padding:0.125rem}
+.p-1{padding:0.25rem}
+.p-1.5{padding:0.375rem}
+.p-2{padding:0.5rem}
+.p-2.5{padding:0.625rem}
+.p-3{padding:0.75rem}
+.p-4{padding:1rem}
+.p-5{padding:1.25rem}
+.p-6{padding:1.5rem}
+.p-7{padding:1.75rem}
+.p-8{padding:2rem}
+.p-10{padding:2.5rem}
+.pt-1{padding-top:0.25rem}
+.pt-2{padding-top:0.5rem}
+.pt-3{padding-top:0.75rem}
+.pb-4{padding-bottom:1rem}
+.pb-5{padding-bottom:1.25rem}
+
+/* === Typography === */
+.text-xs{font-size:.75rem;line-height:1rem}
+.text-sm{font-size:.875rem;line-height:1.25rem}
+.text-base{font-size:1rem;line-height:1.5rem}
+.text-lg{font-size:1.125rem;line-height:1.75rem}
+.text-xl{font-size:1.25rem;line-height:1.75rem}
+.text-2xl{font-size:1.5rem;line-height:2rem}
+.text-3xl{font-size:1.875rem;line-height:2.25rem}
+.text-4xl{font-size:2.25rem;line-height:2.5rem}
+.text-5xl{font-size:3rem;line-height:1}
+.text-6xl{font-size:3.75rem;line-height:1}
+.font-normal{font-weight:400}
+.font-medium{font-weight:500}
+.font-bold{font-weight:700}
+.font-black{font-weight:900}
+.leading-none{line-height:1}
+.leading-tight{line-height:1.25}
+.leading-relaxed{line-height:1.625}
+.text-left{text-align:left}
 .text-center{text-align:center}
 .text-right{text-align:right}
-.shrink-0{flex-shrink:0}
 .whitespace-nowrap{white-space:nowrap}
-.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}
+.whitespace-pre-wrap{white-space:pre-wrap}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.break-all{word-break:break-all}
+
+/* === Text Colors === */
+.text-white{color:#fff}
+.text-gray-200{color:#e5e7eb}
+.text-gray-300{color:#d1d5db}
+.text-gray-400{color:#9ca3af}
+.text-gray-500{color:#6b7280}
+.text-gray-600{color:#4b5563}
+.text-red-300{color:#fca5a5}
+.text-red-400{color:#f87171}
+.text-orange-300{color:#fdba74}
+.text-orange-400{color:#fb923c}
+.text-yellow-300{color:#fde047}
+.text-yellow-400{color:#facc15}
+.text-green-300{color:#86efac}
+.text-green-400{color:#4ade80}
+.text-emerald-400{color:#34d399}
+.text-cyan-400{color:#22d3ee}
+.text-blue-300{color:#93c5fd}
+.text-blue-400{color:#60a5fa}
+.text-indigo-400{color:#818cf8}
+.text-purple-300{color:#d8b4fe}
+.text-purple-400{color:#c084fc}
+.text-pink-300{color:#f9a8d4}
+.text-pink-400{color:#f472b6}
+.text-yellow-400\/80{color:rgba(250,204,21,0.8)}
+.text-pink-400\/70{color:rgba(244,114,182,0.7)}
+
+/* === Background Colors === */
+.bg-white{background-color:#fff}
+.bg-black{background-color:#000}
+.bg-gray-800{background-color:#1f2937}
+.bg-gray-900{background-color:#111827}
+.bg-red-400{background-color:#f87171}
+.bg-red-500{background-color:#ef4444}
+.bg-red-600{background-color:#dc2626}
+.bg-orange-400{background-color:#fb923c}
+.bg-yellow-400{background-color:#facc15}
+.bg-yellow-500{background-color:#eab308}
+.bg-yellow-600{background-color:#ca8a04}
+.bg-green-400{background-color:#4ade80}
+.bg-green-500{background-color:#22c55e}
+.bg-green-600{background-color:#16a34a}
+.bg-blue-400{background-color:#60a5fa}
+.bg-blue-500{background-color:#3b82f6}
+.bg-blue-600{background-color:#2563eb}
+.bg-purple-400{background-color:#c084fc}
+.bg-purple-500{background-color:#a855f7}
+.bg-purple-600{background-color:#9333ea}
+.bg-pink-400{background-color:#f472b6}
+.bg-white/5{background-color:rgba(255,255,255,0.05)}
+.bg-white/10{background-color:rgba(255,255,255,0.1)}
+.bg-white/20{background-color:rgba(255,255,255,0.2)}
+.bg-black/20{background-color:rgba(0,0,0,0.2)}
+.bg-black/30{background-color:rgba(0,0,0,0.3)}
+.bg-black/40{background-color:rgba(0,0,0,0.4)}
+.bg-red-500/10{background-color:rgba(239,68,68,0.1)}
+.bg-red-500/20{background-color:rgba(239,68,68,0.2)}
+.bg-red-600/30{background-color:rgba(220,38,38,0.3)}
+.bg-red-600/80{background-color:rgba(220,38,38,0.8)}
+.bg-orange-500/20{background-color:rgba(249,115,22,0.2)}
+.bg-yellow-500/5{background-color:rgba(234,179,8,0.05)}
+.bg-yellow-500/10{background-color:rgba(234,179,8,0.1)}
+.bg-yellow-500/20{background-color:rgba(234,179,8,0.2)}
+.bg-yellow-500/30{background-color:rgba(234,179,8,0.3)}
+.bg-yellow-600/30{background-color:rgba(202,138,4,0.3)}
+.bg-green-500/10{background-color:rgba(34,197,94,0.1)}
+.bg-green-500/20{background-color:rgba(34,197,94,0.2)}
+.bg-green-600/20{background-color:rgba(22,163,74,0.2)}
+.bg-green-600/30{background-color:rgba(22,163,74,0.3)}
+.bg-blue-500/10{background-color:rgba(59,130,246,0.1)}
+.bg-blue-500/20{background-color:rgba(59,130,246,0.2)}
+.bg-blue-500/30{background-color:rgba(59,130,246,0.3)}
+.bg-blue-600/20{background-color:rgba(37,99,235,0.2)}
+.bg-blue-600/30{background-color:rgba(37,99,235,0.3)}
+.bg-indigo-600/60{background-color:rgba(79,70,229,0.6)}
+.bg-purple-500/10{background-color:rgba(168,85,247,0.1)}
+.bg-gray-600/30{background-color:rgba(75,85,99,0.3)}
+
+/* === Gradient === */
+.bg-gradient-to-r{background-image:linear-gradient(to right,var(--tw-gradient-from),var(--tw-gradient-to))}
+.from-blue-500{--tw-gradient-from:#3b82f6;--tw-gradient-to:transparent}
+.from-blue-600{--tw-gradient-from:#2563eb;--tw-gradient-to:transparent}
+.from-green-400{--tw-gradient-from:#4ade80;--tw-gradient-to:transparent}
+.from-green-600{--tw-gradient-from:#16a34a;--tw-gradient-to:transparent}
+.from-green-700{--tw-gradient-from:#15803d;--tw-gradient-to:transparent}
+.from-orange-500{--tw-gradient-from:#f97316;--tw-gradient-to:transparent}
+.from-orange-600{--tw-gradient-from:#ea580c;--tw-gradient-to:transparent}
+.to-blue-400{--tw-gradient-to:#60a5fa}
+.to-blue-500{--tw-gradient-to:#3b82f6}
+.to-blue-600{--tw-gradient-to:#2563eb}
+.to-emerald-500{--tw-gradient-to:#10b981}
+.to-emerald-600{--tw-gradient-to:#059669}
+.to-purple-500{--tw-gradient-to:#a855f7}
+.to-yellow-500{--tw-gradient-to:#eab308}
+.to-yellow-600{--tw-gradient-to:#ca8a04}
+
+/* === Border === */
+.border{border-width:1px;border-style:solid;border-color:rgba(255,255,255,0.1)}
+.border-b{border-bottom-width:1px;border-bottom-style:solid}
+.border-t{border-top-width:1px;border-top-style:solid}
+.border-white/5{border-color:rgba(255,255,255,0.05)}
+.border-white/10{border-color:rgba(255,255,255,0.1)}
+.border-white/20{border-color:rgba(255,255,255,0.2)}
+.border-red-500/20{border-color:rgba(239,68,68,0.2)}
+.border-red-500/30{border-color:rgba(239,68,68,0.3)}
+.border-orange-500/30{border-color:rgba(249,115,22,0.3)}
+.border-yellow-500/20{border-color:rgba(234,179,8,0.2)}
+.border-yellow-500/30{border-color:rgba(234,179,8,0.3)}
+.border-yellow-600/50{border-color:rgba(202,138,4,0.5)}
+.border-green-500/20{border-color:rgba(34,197,94,0.2)}
+.border-green-500/30{border-color:rgba(34,197,94,0.3)}
+.border-green-500/40{border-color:rgba(34,197,94,0.4)}
+.border-green-600/30{border-color:rgba(22,163,74,0.3)}
+.border-green-600/50{border-color:rgba(22,163,74,0.5)}
+.border-blue-500/20{border-color:rgba(59,130,246,0.2)}
+.border-blue-500/30{border-color:rgba(59,130,246,0.3)}
+.border-blue-500/40{border-color:rgba(59,130,246,0.4)}
+.border-indigo-500/50{border-color:rgba(99,102,241,0.5)}
+.border-purple-500/20{border-color:rgba(168,85,247,0.2)}
+.border-purple-500/30{border-color:rgba(168,85,247,0.3)}
+.border-pink-500/30{border-color:rgba(236,72,153,0.3)}
+
+/* === Border Radius === */
+.rounded{border-radius:0.25rem}
+.rounded-sm{border-radius:0.125rem}
+.rounded-lg{border-radius:0.5rem}
+.rounded-xl{border-radius:0.75rem}
+.rounded-2xl{border-radius:1rem}
+.rounded-full{border-radius:9999px}
+
+/* === Shadow === */
+.shadow-lg{box-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1)}
+.shadow-2xl{box-shadow:0 25px 50px -12px rgba(0,0,0,.25)}
+
+/* === Opacity === */
+.opacity-30{opacity:.3}
+.opacity-40{opacity:.4}
+.opacity-50{opacity:.5}
+.opacity-60{opacity:.6}
+.opacity-70{opacity:.7}
+
+/* === Overflow === */
+.overflow-hidden{overflow:hidden}
+.overflow-x-auto{overflow-x:auto}
+.overflow-y-auto{overflow-y:auto}
+
+/* === Transition === */
+.transition{transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,backdrop-filter;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:150ms}
+.transition-all{transition-property:all;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:150ms}
+.transition-transform{transition-property:transform;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:150ms}
+.duration-1000{transition-duration:1000ms}
+
+/* === Cursor === */
+.cursor-pointer{cursor:pointer}
+.cursor-default{cursor:default}
+
+/* === Misc === */
+.resize-none{resize:none}
+*,::before,::after{box-sizing:border-box}
+button,input,select,textarea{font-family:inherit}
+
+/* === Hover States === */
+.hover\:bg-white/5:hover{background-color:rgba(255,255,255,0.05)}
+.hover\:bg-white/10:hover{background-color:rgba(255,255,255,0.1)}
+.hover\:bg-white/20:hover{background-color:rgba(255,255,255,0.2)}
+.hover\:bg-blue-500/5:hover{background-color:rgba(59,130,246,0.05)}
+.hover\:bg-blue-500/30:hover{background-color:rgba(59,130,246,0.3)}
+.hover\:bg-blue-600/30:hover{background-color:rgba(37,99,235,0.3)}
+.hover\:bg-blue-600/40:hover{background-color:rgba(37,99,235,0.4)}
+.hover\:bg-blue-600/50:hover{background-color:rgba(37,99,235,0.5)}
+.hover\:bg-blue-700:hover{background-color:#1d4ed8}
+.hover\:bg-red-500/5:hover{background-color:rgba(239,68,68,0.05)}
+.hover\:bg-red-500/30:hover{background-color:rgba(239,68,68,0.3)}
+.hover\:bg-red-600:hover{background-color:#dc2626}
+.hover\:bg-red-700:hover{background-color:#b91c1c}
+.hover\:bg-green-600/30:hover{background-color:rgba(22,163,74,0.3)}
+.hover\:bg-green-600/40:hover{background-color:rgba(22,163,74,0.4)}
+.hover\:bg-green-600/50:hover{background-color:rgba(22,163,74,0.5)}
+.hover\:bg-green-700:hover{background-color:#15803d}
+.hover\:bg-yellow-500/5:hover{background-color:rgba(234,179,8,0.05)}
+.hover\:bg-yellow-500/50:hover{background-color:rgba(234,179,8,0.5)}
+.hover\:bg-yellow-600/50:hover{background-color:rgba(202,138,4,0.5)}
+.hover\:bg-yellow-700:hover{background-color:#a16207}
+.hover\:bg-orange-500/5:hover{background-color:rgba(249,115,22,0.05)}
+.hover\:bg-orange-500/30:hover{background-color:rgba(249,115,22,0.3)}
+.hover\:bg-purple-500/5:hover{background-color:rgba(168,85,247,0.05)}
+.hover\:bg-purple-700:hover{background-color:#7e22ce}
+.hover\:bg-pink-500/5:hover{background-color:rgba(236,72,153,0.05)}
+.hover\:bg-indigo-600:hover{background-color:#4f46e5}
+.hover\:bg-gray-600/50:hover{background-color:rgba(75,85,99,0.5)}
+.hover\:text-white:hover{color:#fff}
+.hover\:text-gray-300:hover{color:#d1d5db}
+.hover\:underline:hover{text-decoration:underline}
+.hover\:opacity-80:hover{opacity:.8}
+.hover\:border-blue-400/60:hover{border-color:rgba(96,165,250,0.6)}
+.hover\:border-blue-500/40:hover{border-color:rgba(59,130,246,0.4)}
+.hover\:border-yellow-400/60:hover{border-color:rgba(250,204,21,0.6)}
+.hover\:border-purple-400/60:hover{border-color:rgba(192,132,252,0.6)}
+.hover\:border-red-400/60:hover{border-color:rgba(248,113,113,0.6)}
+.hover\:border-orange-400/60:hover{border-color:rgba(251,146,60,0.6)}
+.hover\:border-pink-400/60:hover{border-color:rgba(244,114,182,0.6)}
+.hover\:scale-\[1\.02\]:hover{transform:scale(1.02)}
+.hover\:from-blue-700:hover{--tw-gradient-from:#1d4ed8}
+.hover\:from-green-700:hover{--tw-gradient-from:#15803d}
+.hover\:from-orange-600:hover{--tw-gradient-from:#ea580c}
+.hover\:to-blue-600:hover{--tw-gradient-to:#2563eb}
+.hover\:to-emerald-600:hover{--tw-gradient-to:#059669}
+.hover\:to-yellow-600:hover{--tw-gradient-to:#ca8a04}
+
+/* === Focus States === */
+.focus\:border-blue-400:focus{border-color:#60a5fa}
+.focus\:border-green-400:focus{border-color:#4ade80}
+.focus\:border-yellow-400:focus{border-color:#facc15}
+.focus\:border-purple-400:focus{border-color:#c084fc}
+.focus\:border-red-400:focus{border-color:#f87171}
+.focus\:outline-none:focus{outline:2px solid transparent;outline-offset:2px}
+
+/* === Disabled States === */
+.disabled\:opacity-30:disabled{opacity:.3}
+.disabled\:opacity-40:disabled{opacity:.4}
+.disabled\:cursor-not-allowed:disabled{cursor:not-allowed}
+
+/* === Active States === */
+.active\:scale-95:active{transform:scale(.95)}
+
+/* === Responsive sm (640px+) === */
+@media(min-width:640px){.sm\:block{display:block}.sm\:hidden{display:none}}
+
+/* === Responsive md (768px+) === */
+@media(min-width:768px){.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.md\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.md\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* === Responsive lg (1024px+) === */
+@media(min-width:1024px){.lg\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.lg\:col-span-2{grid-column:span 2/span 2}}
+
+/* === Pseudo === */
+.last\:border-0:last-child{border-width:0}
+
+/* === Accent === */
+.accent-blue-500{accent-color:#3b82f6}
+.accent-green-500{accent-color:#22c55e}
+.accent-yellow-500{accent-color:#eab308}
+
+/* === Placeholder === */
+.placeholder-gray-600::placeholder{color:#4b5563}
+
+/* === Prose === */
+.prose{max-width:65ch;line-height:1.75}
+.prose-sm{font-size:.875rem}
+.prose-invert{color:#d1d5db}
+
+
 </style>
 </head>
 <body class="text-white">
@@ -2493,7 +2876,7 @@ button,input,select,textarea{font-family:inherit}
   </div>
 
   <!-- 게임 플레이 화면 (방 선택 후 표시) -->
-  <div id="gamePlayScreen" style="display:none">
+  <div id="gamePlayScreen" class="hidden">
     <!-- 방 정보 헤더 -->
     <div class="flex items-center justify-between mb-3">
       <button onclick="backToRoomSelect()" class="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition">
@@ -3732,7 +4115,7 @@ button,input,select,textarea{font-family:inherit}
       </div>
     </div>
     <!-- 문의 상세 모달 -->
-    <div id="inqDetailModal" class="hidden glass rounded-xl p-5 border border-blue-500/30">
+    <div id="inqDetailModal" class="glass rounded-xl p-5 border border-blue-500/30" style="display:none">
       <div class="flex items-center justify-between mb-3">
         <div class="font-bold text-sm text-blue-400" data-i18n="inquiry_detail">📄 문의 상세</div>
         <button onclick="closeInquiryDetail()" class="text-gray-400 hover:text-white text-xs">✕ 닫기</button>

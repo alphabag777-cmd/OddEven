@@ -859,8 +859,8 @@ const ROOM_CONFIGS = {
 function showRoomSelect() {
   const ss = $('roomSelectScreen')
   const gs = $('gamePlayScreen')
-  if (ss) ss.classList.remove('hidden')
-  if (gs) gs.classList.add('hidden')
+  if (ss) { ss.style.display = 'block'; ss.classList.remove('hidden') }
+  if (gs) { gs.style.display = 'none'; gs.classList.add('hidden') }
   // 방 상태 로드 시작
   loadAllRoomStatus()
   if (roomStatusInterval) clearInterval(roomStatusInterval)
@@ -905,8 +905,8 @@ function selectRoom(roomKey) {
   if (roomStatusInterval) { clearInterval(roomStatusInterval); roomStatusInterval = null }
   const ss = $('roomSelectScreen')
   const gs = $('gamePlayScreen')
-  if (ss) ss.classList.add('hidden')
-  if (gs) gs.classList.remove('hidden')
+  if (ss) { ss.style.display = 'none'; ss.classList.add('hidden') }
+  if (gs) { gs.style.display = 'block'; gs.classList.remove('hidden') }
   // 방 배지 업데이트
   updateRoomBadge()
   // 베팅 범위 업데이트
@@ -3465,14 +3465,14 @@ async function init() {
 
   setInterval(() => {
     const gs = $('gamePlayScreen')
-    if (gs && !gs.classList.contains('hidden')) loadRound()
+    if (gs && gs.style.display !== 'none' && !gs.classList.contains('hidden')) loadRound()
   }, 1000)
   setInterval(loadFeed,  4000)
   setInterval(loadDashboard, 30000)
   setInterval(loadNotices, 60000)
   setInterval(() => {
     const p2pPanel = $('p-p2p')
-    if (p2pPanel && !p2pPanel.classList.contains('hidden')) loadP2PRoom()
+    if (p2pPanel && p2pPanel.style.display !== 'none') loadP2PRoom()
   }, 1000)
 }
 
@@ -3508,12 +3508,11 @@ async function checkNoticePopup() {
   }
 }
 
-// Tailwind CDN 로드 완료 후 init 실행
-// (Tailwind JIT가 .hidden 클래스를 재정의하기 전에 우리 CSS가 적용되도록 보장)
+// DOM 준비 후 init 실행 (Tailwind CDN 제거됨 - 순수 CSS 사용)
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => { setTimeout(init, 0) })
+  document.addEventListener('DOMContentLoaded', init)
 } else {
-  setTimeout(init, 0)
+  init()
 }
 
 // ─────────────────────────────────────────────
