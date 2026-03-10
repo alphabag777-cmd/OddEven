@@ -2206,7 +2206,7 @@ select option{background:#1a1a2e;color:#fff}
 [id^="p-"]{scroll-margin-top:110px}
 </style>
 </head>
-<body class="text-white" onload="initLayout()">
+<body class="text-white">
 
 <!-- 공지 배너 -->
 <div id="noticeBanner" class="hidden">

@@ -3424,6 +3424,7 @@ async function loadP2PHistory() {
 // 초기화
 // ═══════════════════════════════════════════════
 async function init() {
+  initLayout()  // CSS 변수 설정 (헤더 높이 → 네비 top)
   applyLang()
   parseRef()
 
