@@ -601,11 +601,16 @@ const ago = ts => {
 }
 
 async function api(path, opts={}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', 'X-Session-Id': sid },
-    ...opts
-  })
-  return res.json()
+  try {
+    const res = await fetch(path, {
+      headers: { 'Content-Type': 'application/json', 'X-Session-Id': sid },
+      ...opts
+    })
+    if (!res.ok && res.status >= 500) return { error: 'SERVER_ERROR' }
+    return await res.json()
+  } catch(e) {
+    return { error: 'NETWORK_ERROR' }
+  }
 }
 
 function toast(msg, color='text-white') {
@@ -635,7 +640,7 @@ const errMap = code => {
 // 탭 네비게이션
 // ═══════════════════════════════════════════════
 function showTab(name) {
-  // 방 상태 폴링 인터벌 정리 (게임 탭 이탈 시)
+  // 게임 탭 이탈 시 방 상태 폴링 인터벌 정리
   if (name !== 'game' && roomStatusInterval) {
     clearInterval(roomStatusInterval)
     roomStatusInterval = null
@@ -643,23 +648,29 @@ function showTab(name) {
 
   const tabs = ['game','mypage','wallet','dashboard','referral','verify','leaderboard','faq','support','login','register','admin']
   tabs.forEach(tab => {
-    const p = $(  'p-' + tab)
-    const b1 = $( 't-' + tab)          // 1단 버튼
-    const b2 = $( 't-' + tab + '-m')   // 2단 모바일 버튼
+    const p  = $('p-' + tab)
+    const b1 = $('t-' + tab)        // 1단 버튼
+    const b2 = $('t-' + tab + '-m') // 2단 모바일 버튼 (있는 경우만)
     if (p)  p.classList.toggle('hidden', tab !== name)
     if (b1) { b1.classList.toggle('tab-on', tab === name); b1.classList.toggle('tab-off', tab !== name) }
     if (b2) { b2.classList.toggle('tab-on', tab === name); b2.classList.toggle('tab-off', tab !== name) }
   })
-  if (name === 'dashboard')   loadDashboard()
-  if (name === 'referral')    loadReferral()
-  if (name === 'verify')      loadVerifyHist()
-  if (name === 'wallet')      loadWallet()
-  if (name === 'mypage')      loadMypage()
-  if (name === 'admin')       loadAdmin()
-  if (name === 'faq')         loadFAQ('')
-  if (name === 'support')     loadSupport()
-  if (name === 'leaderboard') loadLeaderboard('total_bet')
-  if (name === 'game')        showRoomSelect()
+
+  // 각 탭 데이터 로드 (game 탭은 showRoomSelect에서 처리)
+  try {
+    if (name === 'dashboard')   loadDashboard()
+    if (name === 'referral')    loadReferral()
+    if (name === 'verify')      loadVerifyHist()
+    if (name === 'wallet')      loadWallet()
+    if (name === 'mypage')      loadMypage()
+    if (name === 'admin')       loadAdmin()
+    if (name === 'faq')         loadFAQ('')
+    if (name === 'support')     loadSupport()
+    if (name === 'leaderboard') loadLeaderboard('total_bet')
+    if (name === 'game')        showRoomSelect()
+  } catch(e) {
+    console.error('showTab error:', e)
+  }
 }
 
 function updateUI() {
@@ -671,9 +682,9 @@ function updateUI() {
   loginTabs.forEach(t => { const b = $('t-'+t); if (b) b.classList.toggle('hidden', loggedIn) })
   const userTabs = ['mypage','wallet','support']
   userTabs.forEach(t => {
-    const b1 = $('t-'+t), b2 = $('t-'+t+'-m')
-    if (b1) b1.classList.toggle('hidden', !loggedIn)
-    if (b2) b2.classList.toggle('hidden', !loggedIn)
+    ['t-'+t, 't-'+t+'-m'].forEach(id => {
+      const b = $(id); if (b) b.classList.toggle('hidden', !loggedIn)
+    })
   })
   const adminTab = $('t-admin')
   if (adminTab) adminTab.classList.toggle('hidden', !(me && me.isAdmin))
