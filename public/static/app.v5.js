@@ -705,13 +705,16 @@ function showTab(name) {
     p2pInterval = null
   }
 
-  // 모든 패널 숨기기 / 선택 패널 보이기
+  // 모든 패널 숨기기 / 선택 패널 보이기 (style.display 사용 - Tailwind .hidden 클래스 충돌 방지)
   const tabs = ['game','mypage','wallet','dashboard','referral','verify','leaderboard','faq','support','login','register','admin','p2p']
   tabs.forEach(tab => {
     const p  = $('p-' + tab)
     const b1 = $('t-' + tab)
     const b2 = $('t-' + tab + '-m')
-    if (p)  p.classList.toggle('hidden', tab !== name)
+    if (p) {
+      p.style.display = (tab === name) ? 'block' : 'none'
+      p.classList.remove('hidden') // Tailwind hidden 클래스 완전 제거
+    }
     if (b1) { b1.classList.toggle('tab-on', tab === name); b1.classList.toggle('tab-off', tab !== name) }
     if (b2) { b2.classList.toggle('tab-on', tab === name); b2.classList.toggle('tab-off', tab !== name) }
   })
@@ -3505,7 +3508,13 @@ async function checkNoticePopup() {
   }
 }
 
-init()
+// Tailwind CDN 로드 완료 후 init 실행
+// (Tailwind JIT가 .hidden 클래스를 재정의하기 전에 우리 CSS가 적용되도록 보장)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => { setTimeout(init, 0) })
+} else {
+  setTimeout(init, 0)
+}
 
 // ─────────────────────────────────────────────
 // 기능 1: 관리자 활동 로그

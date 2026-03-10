@@ -2142,7 +2142,10 @@ const HTML = `<!DOCTYPE html>
 <meta http-equiv="Expires" content="0">
 <title>🎲 ODD/EVEN - Blockchain Fair Game</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script>tailwind.config={corePlugins:{preflight:false}}</script>
+<script>
+// Tailwind 설정: preflight 비활성화
+tailwind.config={corePlugins:{preflight:false}}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
@@ -2332,7 +2335,7 @@ button,input,select,textarea{font-family:inherit}
 <main id="mainContent" class="max-w-6xl mx-auto px-3 py-4">
 
 <!-- ══ 게임 탭 ══ -->
-<div id="p-game" class="hidden">
+<div id="p-game" style="display:none">
 
   <!-- 방 선택 화면 -->
   <div id="roomSelectScreen">
@@ -2490,7 +2493,7 @@ button,input,select,textarea{font-family:inherit}
   </div>
 
   <!-- 게임 플레이 화면 (방 선택 후 표시) -->
-  <div id="gamePlayScreen" class="hidden">
+  <div id="gamePlayScreen" style="display:none">
     <!-- 방 정보 헤더 -->
     <div class="flex items-center justify-between mb-3">
       <button onclick="backToRoomSelect()" class="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition">
@@ -2625,7 +2628,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 마이페이지 탭 ══ -->
-<div id="p-mypage" class="hidden">
+<div id="p-mypage" style="display:none">
   <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="mypage_title">👤 마이페이지</h2></div>
   <div id="mypageNeedLogin" class="glass rounded-xl p-8 text-center">
     <div class="text-gray-400 mb-3 text-sm" data-i18n="need_login">로그인이 필요합니다</div>
@@ -2701,7 +2704,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 지갑 탭 ══ -->
-<div id="p-wallet" class="hidden">
+<div id="p-wallet" style="display:none">
   <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="wallet_title">💰 USDT 지갑</h2><p class="text-gray-400 text-sm" data-i18n="wallet_desc">TRC20 (TRON) 네트워크 기반 USDT 입출금</p></div>
   <div id="walletNeedLogin" class="glass rounded-xl p-8 text-center">
     <div class="text-gray-400 mb-3 text-sm" data-i18n="need_login">로그인이 필요합니다</div>
@@ -2791,7 +2794,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 투명성 탭 ══ -->
-<div id="p-dashboard" class="hidden">
+<div id="p-dashboard" style="display:none">
   <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="dash_title">📊 투명성 대시보드</h2><p class="text-gray-400 text-sm" data-i18n="dash_desc">모든 데이터 실시간 공개</p></div>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
     <div class="glass rounded-xl p-3 text-center"><div class="text-2xl font-black text-blue-400" id="dTotalGames">0</div><div class="text-xs text-gray-400 mt-1" data-i18n="total_games">총 게임</div></div>
@@ -2882,7 +2885,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 추천수당 탭 ══ -->
-<div id="p-referral" class="hidden">
+<div id="p-referral" style="display:none">
   <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="ref_title">👥 추천인 수당 시스템</h2><p class="text-gray-400 text-sm" data-i18n="ref_desc">친구 초대 → 베팅 때마다 자동 USDT 수당</p></div>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
     <div class="glass rounded-xl p-4 text-center border border-blue-500/30"><div class="text-3xl mb-1">👤</div><div class="text-blue-400 font-black text-2xl">2.5%</div><div class="font-bold text-sm my-1" data-i18n="l1_title">1단계 수당</div><div class="text-xs text-gray-400" data-i18n="l1_desc">직접 초대 친구 베팅금의 2.5% 자동 지급</div></div>
@@ -2928,7 +2931,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 검증 탭 ══ -->
-<div id="p-verify" class="hidden">
+<div id="p-verify" style="display:none">
   <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="verify_title">🔍 공정성 직접 검증</h2><p class="text-gray-400 text-sm" data-i18n="verify_desc">결과가 조작되지 않았음을 수학적으로 확인</p></div>
   <div class="glass rounded-xl p-4 mb-4">
     <div class="font-bold mb-3 text-sm" data-i18n="system_title">🔐 하이브리드 공정성 시스템</div>
@@ -2964,7 +2967,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 로그인 탭 ══ -->
-<div id="p-login" class="hidden">
+<div id="p-login" style="display:none">
   <div class="max-w-sm mx-auto space-y-4">
     <!-- 지갑 로그인 (메인) -->
     <div class="glass rounded-2xl p-7">
@@ -3014,7 +3017,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 회원가입 탭 ══ -->
-<div id="p-register" class="hidden">
+<div id="p-register" style="display:none">
   <div class="max-w-sm mx-auto">
     <div class="glass rounded-2xl p-7">
       <div class="text-center mb-5"><div class="text-5xl mb-3">🦊</div><h2 class="text-xl font-black" data-i18n="wallet_login">🔗 지갑으로 가입</h2><p class="text-green-400 text-xs mt-1" data-i18n="bonus_msg">🎁 가입 즉시 10 USDT 보너스!</p></div>
@@ -3037,7 +3040,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ P2P 배틀룸 탭 ══ -->
-<div id="p-p2p" class="hidden">
+<div id="p-p2p" style="display:none">
   <div class="mb-4 flex items-center justify-between">
     <div>
       <h2 class="text-xl font-black">⚔️ <span data-i18n="p2p_title">P2P 배틀룸</span></h2>
@@ -3119,7 +3122,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 
-<div id="p-admin" class="hidden">
+<div id="p-admin" style="display:none">
   <div class="mb-4"><h2 class="text-xl font-black mb-1 text-yellow-400">⚙️ 관리자 페이지</h2></div>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2">
     <div class="admin-card rounded-xl p-3 text-center"><div class="text-2xl font-black text-yellow-400" id="adTotalUsers">0</div><div class="text-xs text-gray-400 mt-1">전체 유저</div></div>
@@ -3625,7 +3628,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 리더보드 탭 ══ -->
-<div id="p-leaderboard" class="hidden">
+<div id="p-leaderboard" style="display:none">
   <div class="mb-4">
     <h2 class="text-xl font-black mb-1">🏆 <span data-i18n="lb_title">랭킹 리더보드</span></h2>
     <p class="text-gray-400 text-sm" data-i18n="lb_desc">누적 베팅 TOP10 및 순이익 TOP10</p>
@@ -3645,7 +3648,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ FAQ 탭 ══ -->
-<div id="p-faq" class="hidden">
+<div id="p-faq" style="display:none">
   <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="tab_faq">❓ FAQ</h2><p class="text-gray-400 text-sm" data-i18n="faq_desc">자주 묻는 질문과 답변</p></div>
   <!-- 카테고리 필터 -->
   <div class="flex flex-wrap gap-2 mb-4" id="faqCatBtns">
@@ -3669,7 +3672,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- ══ 1:1 문의 탭 ══ -->
-<div id="p-support" class="hidden">
+<div id="p-support" style="display:none">
   <div class="mb-4"><h2 class="text-xl font-black mb-1" data-i18n="tab_support">💬 1:1 문의</h2><p class="text-gray-400 text-sm" data-i18n="support_desc">궁금한 점을 문의하시면 빠르게 답변드립니다</p></div>
   <div id="supportNeedLogin" class="glass rounded-xl p-8 text-center">
     <div class="text-gray-400 mb-3 text-sm" data-i18n="need_login">로그인이 필요합니다</div>
