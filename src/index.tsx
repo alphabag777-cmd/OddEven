@@ -2726,7 +2726,7 @@ button,input,select,textarea{font-family:inherit}
       <h2 class="text-2xl font-black mb-1">🎮 <span data-i18n="room_select_title">방 선택</span></h2>
       <p class="text-gray-400 text-sm" data-i18n="room_select_desc">참여할 게임 방을 선택하세요</p>
     </div>
-    <div class="grid grid-cols-1 gap-3 max-w-2xl mx-auto" id="roomList">
+    <div class="grid grid-cols-2 lg:grid-cols-1 gap-3 max-w-2xl mx-auto" id="roomList">
 
       <!-- 터보 방 -->
       <div onclick="selectRoom('turbo')" class="room-card glass rounded-2xl p-4 cursor-pointer hover:scale-[1.02] transition-all border border-yellow-500/30 hover:border-yellow-400/60 hover:bg-yellow-500/5">
@@ -3009,6 +3009,7 @@ button,input,select,textarea{font-family:inherit}
     </div>
   </div>
 </div>
+</div> <!-- p-game 닫힘 -->
 
 <!-- ══ 마이페이지 탭 ══ -->
 <div id="p-mypage" style="display:none">
@@ -3479,7 +3480,7 @@ button,input,select,textarea{font-family:inherit}
         <button onclick="document.getElementById('p2pBetAmt').value=50"  class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">50</button>
         <button onclick="document.getElementById('p2pBetAmt').value=100" class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">100</button>
         <button onclick="document.getElementById('p2pBetAmt').value=500" class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">500</button>
-        <button onclick="document.getElementById('p2pBetAmt').value=1000"class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">1K</button>
+        <button onclick="document.getElementById('p2pBetAmt').value=1000" class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">1K</button>
         <button onclick="if(me)document.getElementById('p2pBetAmt').value=Math.min(me.balance,50000)" class="px-2 py-1 bg-yellow-500/30 hover:bg-yellow-500/50 rounded text-xs font-bold text-yellow-300">ALL-IN</button>
       </div>
     </div>
