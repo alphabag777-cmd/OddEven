@@ -2208,6 +2208,9 @@ select option{background:#1a1a2e;color:#fff}
 .notice-content p{margin:0;line-height:1.5}
 /* Tailwind .hidden 보장 - Tailwind CDN 로드 전/후 모두 동작 */
 .hidden{display:none!important}
+/* 모달 오버레이 - flex+hidden 충돌 방지용 */
+.modal-overlay{display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex!important}
 .notice-content strong{font-weight:700}
 .notice-content em{font-style:italic}
 .notice-content a{color:#63b3ed;text-decoration:underline}
@@ -3277,7 +3280,7 @@ button,input,select,textarea{font-family:inherit}
   </div>
 
   <!-- ══ 유저 상세 모달 ══ -->
-  <div id="userDetailModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.7)">
+  <div id="userDetailModal" class="modal-overlay fixed inset-0 z-50 items-center justify-center p-4" style="display:none;background:rgba(0,0,0,0.7)">
     <div class="glass rounded-2xl p-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-3">
         <div class="font-bold text-yellow-400">🔍 유저 상세</div>
@@ -3288,7 +3291,7 @@ button,input,select,textarea{font-family:inherit}
   </div>
 
   <!-- ══ FAQ 편집 모달 ══ -->
-  <div id="faqEditModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.7)">
+  <div id="faqEditModal" class="modal-overlay fixed inset-0 z-50 items-center justify-center p-4" style="display:none;background:rgba(0,0,0,0.7)">
     <div class="glass rounded-2xl p-4 w-full max-w-md">
       <div class="flex items-center justify-between mb-3">
         <div class="font-bold text-yellow-400">✏️ FAQ 수정</div>
@@ -3739,7 +3742,7 @@ button,input,select,textarea{font-family:inherit}
 </main>
 
 <!-- 공지사항 팝업 모달 -->
-<div id="noticePopupModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.75)">
+<div id="noticePopupModal" class="modal-overlay fixed inset-0 z-50 items-center justify-center p-4" style="display:none;background:rgba(0,0,0,0.75)">
   <div class="glass rounded-2xl p-5 w-full max-w-md border border-yellow-500/30">
     <div class="flex items-center justify-between mb-3">
       <div class="font-bold text-yellow-400">📢 공지사항</div>
@@ -3754,7 +3757,7 @@ button,input,select,textarea{font-family:inherit}
 </div>
 
 <!-- 파트너 수익 내역 모달 -->
-<div id="partnerEarningsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.7)">
+<div id="partnerEarningsModal" class="modal-overlay fixed inset-0 z-50 items-center justify-center p-4" style="display:none;background:rgba(0,0,0,0.7)">
   <div class="glass rounded-2xl p-5 w-full max-w-lg border border-yellow-500/30 max-h-[85vh] overflow-y-auto">
     <div class="flex items-center justify-between mb-3">
       <div id="partnerEarningsTitle" class="font-bold text-yellow-400">📊 파트너 수익 내역</div>

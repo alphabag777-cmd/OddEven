@@ -2141,7 +2141,7 @@ function showBalModal(userId, username) {
   $('adBalUserId').value  = userId
   $('adBalUser').textContent = username
   $('adBalAmt').value = ''
-  $('adBalModal').classList.remove('hidden')
+  $('adBalModal').style.display='flex'
 }
 
 async function adminAdjBal(type) {
@@ -2151,7 +2151,7 @@ async function adminAdjBal(type) {
   const data = await api('/api/admin/user/balance', { method:'POST', body: JSON.stringify({userId, amount, type}) })
   if (data.success) {
     toast('✅ 잔액 조정 완료: ' + fmtU(data.balance) + ' USDT', 'text-green-400')
-    $('adBalModal').classList.add('hidden')
+    $('adBalModal').style.display='none'
     loadAdminUsers()
   } else toast('❌ ' + (data.error||'오류'), 'text-red-400')
 }
@@ -2169,7 +2169,7 @@ async function openUserDetail(userId) {
   const body  = $('userDetailBody')
   if (!modal || !body) return
   body.innerHTML = '<div class="text-center py-8 text-gray-400">로딩 중...</div>'
-  modal.classList.remove('hidden')
+  modal.style.display='flex'
 
   const data = await api('/api/admin/user/' + userId + '/detail')
   if (data.error) { body.innerHTML = '<div class="text-red-400 text-center py-4">불러오기 실패</div>'; return }
@@ -2262,7 +2262,7 @@ async function openUserDetail(userId) {
     <div class="mt-3 flex gap-2">
       <button onclick="showBalModal('${u.id}','${u.username}')" class="flex-1 py-2 bg-yellow-600/30 hover:bg-yellow-600/50 rounded-lg text-xs font-bold transition">💰 잔액 조정</button>
       <button onclick="adminBan('${u.id}',${!u.isBanned})" class="flex-1 py-2 ${u.isBanned?'bg-green-600/30 hover:bg-green-600/50':'bg-red-600/30 hover:bg-red-600/50'} rounded-lg text-xs font-bold transition">${u.isBanned?'✅ 차단 해제':'🚫 차단'}</button>
-      <button onclick="$('userDetailModal').classList.add('hidden')" class="flex-1 py-2 bg-gray-600/30 hover:bg-gray-600/50 rounded-lg text-xs font-bold transition">닫기</button>
+      <button onclick="$('userDetailModal').style.display='none'" class="flex-1 py-2 bg-gray-600/30 hover:bg-gray-600/50 rounded-lg text-xs font-bold transition">닫기</button>
     </div>
 
     <!-- 관리자 메모 편집 -->
@@ -2501,7 +2501,7 @@ async function showPartnerEarnings(code, name) {
   if (!modal || !body) return
   if (title) title.textContent = `📊 ${name} 수익 내역`
   body.innerHTML = '<div class="text-center py-6 text-gray-400 text-xs">로딩 중...</div>'
-  modal.classList.remove('hidden')
+  modal.style.display='flex'
 
   const data = await api('/api/admin/partner/earnings?code=' + encodeURIComponent(code) + '&limit=50')
   if (!data.earnings) { body.innerHTML = '<div class="text-red-400 text-center py-4 text-xs">불러오기 실패</div>'; return }
@@ -2825,12 +2825,12 @@ async function openInquiryDetail(id) {
           <button onclick="submitFollowup('${inq.id}')" class="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold transition">📤 추가 문의 전송</button>
         </div>` : `<div class="text-xs text-gray-500 text-center py-2">🔒 종료된 문의입니다</div>`}
     </div>`
-  modal.classList.remove('hidden')
+  modal.style.display='flex'
 }
 
 function closeInquiryDetail() {
   const modal = $('inqDetailModal')
-  if (modal) modal.classList.add('hidden')
+  if (modal) modal.style.display='none'
 }
 
 // 재문의(추가 답변) 전송
@@ -2957,7 +2957,7 @@ async function loadAdminInquiries(status) {
 }
 
 function openAdminReply(id, title) {
-  if ($('adReplyModal')) $('adReplyModal').classList.remove('hidden')
+  if ($('adReplyModal')) $('adReplyModal').style.display='flex'
   if ($('adReplyInqId')) $('adReplyInqId').value = id
   if ($('adReplyTitle')) $('adReplyTitle').textContent = title
   // Quill 에디터 초기화
@@ -3012,7 +3012,7 @@ async function openAdminInquiryDetail(id) {
 }
 
 function closeAdminReply() {
-  if ($('adReplyModal')) $('adReplyModal').classList.add('hidden')
+  if ($('adReplyModal')) $('adReplyModal').style.display='none'
 }
 
 async function submitAdminReply() {
@@ -3142,7 +3142,7 @@ function openFAQEdit(id) {
   $('faqEditCat').value      = faq.category || 'general'
   $('faqEditQ').value        = faq.question || ''
   $('faqEditA').value        = faq.answer || ''
-  modal.classList.remove('hidden')
+  modal.style.display='flex'
 }
 
 async function saveFAQEdit() {
@@ -3154,7 +3154,7 @@ async function saveFAQEdit() {
   const data = await api('/api/admin/faq/update', { method:'POST', body: JSON.stringify({id, category, question, answer, is_active: true}) })
   if (data.success) {
     toast('✅ FAQ 수정 완료', 'text-green-400')
-    $('faqEditModal').classList.add('hidden')
+    $('faqEditModal').style.display='none'
     loadAdminFAQs()
   } else toast('❌ ' + (data.error||'오류'), 'text-red-400')
 }
@@ -3496,12 +3496,12 @@ async function checkNoticePopup() {
   const colorMap = { warning:'border-yellow-500/40 text-yellow-300', danger:'border-red-500/40 text-red-300', info:'border-blue-500/40 text-blue-300' }
   const typeClass = colorMap[data.notice.type] || colorMap.info
   body.innerHTML = `<div class="prose prose-invert prose-sm max-w-none text-sm text-gray-200">${data.notice.displayContent}</div>`
-  modal.classList.remove('hidden')
-  $('noticePopupClose').onclick = () => modal.classList.add('hidden')
+  modal.style.display='flex'
+  $('noticePopupClose').onclick = () => modal.style.display='none'
   $('noticeSkipToday').onclick  = () => {
     const today = new Date(); today.setHours(0,0,0,0)
     localStorage.setItem(skipKey, String(today.getTime()))
-    modal.classList.add('hidden')
+    modal.style.display='none'
   }
 }
 
