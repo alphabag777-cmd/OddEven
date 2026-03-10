@@ -3257,7 +3257,7 @@ button,input,select,textarea{font-family:inherit}
       <button onclick="loadAdminUsers(adUserPage+1)" id="adUserNextBtn" class="px-3 py-1.5 bg-white/10 rounded-lg text-xs hover:bg-white/20 transition" disabled>다음 ▶</button>
     </div>
   </div>
-  <div id="adBalModal" class="hidden glass rounded-xl p-4 mb-4 border border-yellow-500/30">
+  <div id="adBalModal" class="glass rounded-xl p-4 mb-4 border border-yellow-500/30" style="display:none">
     <div class="font-bold text-sm text-yellow-400 mb-3">💰 잔액 조정</div>
     <div class="space-y-2">
       <div class="text-xs text-gray-400">유저: <span id="adBalUser" class="text-white font-bold">-</span></div>
@@ -3274,7 +3274,7 @@ button,input,select,textarea{font-family:inherit}
         <button onclick="adminAdjBal('add')" class="flex-1 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-xs font-bold transition">+ 추가</button>
         <button onclick="adminAdjBal('set')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-xs font-bold transition">= 설정</button>
         <button onclick="adminResetPw()" class="flex-1 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-xs font-bold transition">🔑 비번초기화</button>
-        <button onclick="document.getElementById('adBalModal').classList.add('hidden')" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition">취소</button>
+        <button onclick="document.getElementById('adBalModal').style.display='none'" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs transition">취소</button>
       </div>
     </div>
   </div>
@@ -3284,7 +3284,7 @@ button,input,select,textarea{font-family:inherit}
     <div class="glass rounded-2xl p-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-3">
         <div class="font-bold text-yellow-400">🔍 유저 상세</div>
-        <button onclick="$('userDetailModal').classList.add('hidden')" class="text-gray-400 hover:text-white text-xl">✕</button>
+        <button onclick="$('userDetailModal').style.display='none'" class="text-gray-400 hover:text-white text-xl">✕</button>
       </div>
       <div id="userDetailBody"><div class="text-center py-8 text-gray-400">로딩 중...</div></div>
     </div>
@@ -3295,7 +3295,7 @@ button,input,select,textarea{font-family:inherit}
     <div class="glass rounded-2xl p-4 w-full max-w-md">
       <div class="flex items-center justify-between mb-3">
         <div class="font-bold text-yellow-400">✏️ FAQ 수정</div>
-        <button onclick="$('faqEditModal').classList.add('hidden')" class="text-gray-400 hover:text-white text-xl">✕</button>
+        <button onclick="$('faqEditModal').style.display='none'" class="text-gray-400 hover:text-white text-xl">✕</button>
       </div>
       <input type="hidden" id="faqEditId">
       <div class="space-y-2">
@@ -3311,7 +3311,7 @@ button,input,select,textarea{font-family:inherit}
         <textarea id="faqEditA" rows="4" placeholder="답변 (한국어)" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white text-sm focus:outline-none resize-none"></textarea>
         <div class="flex gap-2">
           <button onclick="saveFAQEdit()" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-bold transition">💾 저장</button>
-          <button onclick="$('faqEditModal').classList.add('hidden')" class="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition">취소</button>
+          <button onclick="$('faqEditModal').style.display='none'" class="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition">취소</button>
         </div>
       </div>
     </div>
@@ -3526,7 +3526,7 @@ button,input,select,textarea{font-family:inherit}
     </div>
     <div id="adInquiryList" class="space-y-2"><div class="text-xs text-gray-500 text-center py-3">로딩 중...</div></div>
     <!-- 답변 모달 -->
-    <div id="adReplyModal" class="hidden mt-3 bg-black/30 rounded-xl p-3 border border-blue-500/30">
+    <div id="adReplyModal" class="mt-3 bg-black/30 rounded-xl p-3 border border-blue-500/30" style="display:none">
       <div class="text-xs text-blue-400 font-bold mb-2">✏️ 답변 작성</div>
       <div class="text-xs text-gray-400 mb-2" id="adReplyTitle">-</div>
       <input type="hidden" id="adReplyInqId">
@@ -3751,7 +3751,7 @@ button,input,select,textarea{font-family:inherit}
     <div id="noticePopupBody" class="mb-4 text-sm text-gray-200 max-h-64 overflow-y-auto"></div>
     <div class="flex gap-2">
       <button id="noticeSkipToday" class="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs transition">오늘 하루 보지 않기</button>
-      <button id="noticePopupClose" onclick="$('noticePopupModal').classList.add('hidden')" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-xl text-xs font-bold transition">확인</button>
+      <button id="noticePopupClose" onclick="$('noticePopupModal').style.display='none'" class="flex-1 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-xl text-xs font-bold transition">확인</button>
     </div>
   </div>
 </div>
@@ -3761,7 +3761,7 @@ button,input,select,textarea{font-family:inherit}
   <div class="glass rounded-2xl p-5 w-full max-w-lg border border-yellow-500/30 max-h-[85vh] overflow-y-auto">
     <div class="flex items-center justify-between mb-3">
       <div id="partnerEarningsTitle" class="font-bold text-yellow-400">📊 파트너 수익 내역</div>
-      <button onclick="$('partnerEarningsModal').classList.add('hidden')" class="text-gray-400 hover:text-white text-xl">✕</button>
+      <button onclick="$('partnerEarningsModal').style.display='none'" class="text-gray-400 hover:text-white text-xl">✕</button>
     </div>
     <div id="partnerEarningsBody"></div>
   </div>
@@ -3771,7 +3771,7 @@ button,input,select,textarea{font-family:inherit}
   <div id="toastMsg" class="glass rounded-xl px-4 py-3 text-sm font-bold shadow-2xl slide"></div>
 </div>
 
-<script src="/static/app.v4.js"></script>
+<script src="/static/app.v5.js"></script>
 </body>
 </html>`
 
