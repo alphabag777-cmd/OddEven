@@ -2142,6 +2142,7 @@ const HTML = `<!DOCTYPE html>
 <meta http-equiv="Expires" content="0">
 <title>🎲 ODD/EVEN - Blockchain Fair Game</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={corePlugins:{preflight:false}}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
@@ -2205,6 +2206,8 @@ select option{background:#1a1a2e;color:#fff}
 .attach-item button{color:#fc8181;background:none;border:none;cursor:pointer;font-size:12px;line-height:1}
 /* 공지 내용 렌더링 */
 .notice-content p{margin:0;line-height:1.5}
+/* Tailwind .hidden 보장 - Tailwind CDN 로드 전/후 모두 동작 */
+.hidden{display:none!important}
 .notice-content strong{font-weight:700}
 .notice-content em{font-style:italic}
 .notice-content a{color:#63b3ed;text-decoration:underline}
@@ -2213,6 +2216,49 @@ select option{background:#1a1a2e;color:#fff}
 .inquiry-content ul,.inquiry-content ol{padding-left:20px;margin:4px 0}
 /* 탭 패널 스크롤 여백 (sticky 헤더+네비 가림 방지) */
 [id^="p-"]{scroll-margin-top:110px}
+/* Tailwind 보완: 기본 유틸 직접 정의 */
+*,::before,::after{box-sizing:border-box}
+button,input,select,textarea{font-family:inherit}
+.text-white{color:#fff!important}
+.flex{display:flex!important}
+.block{display:block!important}
+.inline-block{display:inline-block!important}
+.grid{display:grid!important}
+.overflow-x-auto{overflow-x:auto}
+.overflow-hidden{overflow:hidden}
+.w-full{width:100%}
+.max-w-sm{max-width:24rem}
+.max-w-2xl{max-width:42rem}
+.max-w-6xl{max-width:72rem}
+.mx-auto{margin-left:auto;margin-right:auto}
+.sticky{position:sticky}
+.top-0{top:0}
+.z-50{z-index:50}
+.z-40{z-index:40}
+.cursor-pointer{cursor:pointer}
+.transition{transition:all .15s ease}
+.border-b{border-bottom-width:1px}
+.px-3{padding-left:.75rem;padding-right:.75rem}
+.py-4{padding-top:1rem;padding-bottom:1rem}
+.text-sm{font-size:.875rem;line-height:1.25rem}
+.text-xs{font-size:.75rem;line-height:1rem}
+.font-bold{font-weight:700}
+.font-black{font-weight:900}
+.rounded-xl{border-radius:.75rem}
+.rounded-2xl{border-radius:1rem}
+.space-y-4>*+*{margin-top:1rem}
+.space-y-3>*+*{margin-top:.75rem}
+.gap-3{gap:.75rem}
+.gap-2{gap:.5rem}
+.gap-1{gap:.25rem}
+.items-center{align-items:center}
+.justify-between{justify-content:space-between}
+.justify-center{justify-content:center}
+.text-center{text-align:center}
+.text-right{text-align:right}
+.shrink-0{flex-shrink:0}
+.whitespace-nowrap{white-space:nowrap}
+.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}
 </style>
 </head>
 <body class="text-white">
