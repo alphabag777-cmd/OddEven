@@ -1985,21 +1985,31 @@ select option{background:#1a1a2e;color:#fff}
   </div>
 </header>
 
-<!-- 탭 -->
-<nav class="border-b border-white/10 bg-black/30 overflow-x-auto">
-  <div class="max-w-6xl mx-auto px-3 flex whitespace-nowrap">
-    <button onclick="showTab('game')"      id="t-game"      class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_game">🎲 게임</button>
-    <button onclick="showTab('mypage')"    id="t-mypage"    class="tab-off hidden px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_mypage">👤 마이페이지</button>
-    <button onclick="showTab('wallet')"    id="t-wallet"    class="tab-off hidden px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_wallet">💰 지갑</button>
-    <button onclick="showTab('dashboard')" id="t-dashboard" class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_dashboard">📊 투명성</button>
-    <button onclick="showTab('referral')"  id="t-referral"  class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_referral">👥 추천수당</button>
-    <button onclick="showTab('verify')"    id="t-verify"    class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_verify">🔍 검증</button>
-    <button onclick="showTab('leaderboard')" id="t-leaderboard" class="tab-off px-4 py-2.5 text-xs font-bold transition">🏆 랭킹</button>
-    <button onclick="showTab('faq')"       id="t-faq"       class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_faq">❓ FAQ</button>
-    <button onclick="showTab('support')"   id="t-support"   class="tab-off hidden px-4 py-2.5 text-xs font-bold transition" data-i18n="tab_support">💬 문의</button>
-    <button onclick="showTab('login')"     id="t-login"     class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="login">🔐 로그인</button>
-    <button onclick="showTab('register')"  id="t-register"  class="tab-off px-4 py-2.5 text-xs font-bold transition" data-i18n="register">✍️ 가입</button>
-    <button onclick="showTab('admin')"     id="t-admin"     class="tab-off hidden px-4 py-2.5 text-xs font-bold transition text-yellow-400">⚙️ 관리자</button>
+<!-- 탭 네비게이션 - 모바일 2단 / 데스크탑 1단 -->
+<nav class="border-b border-white/10 bg-black/30 sticky top-0 z-40">
+  <!-- 1단: 주요 탭 (항상 표시) -->
+  <div class="max-w-6xl mx-auto px-2 flex whitespace-nowrap overflow-x-auto scrollbar-hide">
+    <button onclick="showTab('game')"        id="t-game"        class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_game">🎲 게임</button>
+    <button onclick="showTab('mypage')"      id="t-mypage"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_mypage">👤 MY</button>
+    <button onclick="showTab('wallet')"      id="t-wallet"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_wallet">💰 지갑</button>
+    <button onclick="showTab('dashboard')"   id="t-dashboard"   class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_dashboard">📊 통계</button>
+    <button onclick="showTab('referral')"    id="t-referral"    class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천</button>
+    <button onclick="showTab('leaderboard')" id="t-leaderboard" class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0">🏆 랭킹</button>
+    <button onclick="showTab('faq')"         id="t-faq"         class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
+    <button onclick="showTab('support')"     id="t-support"     class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
+    <button onclick="showTab('verify')"      id="t-verify"      class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0 hidden sm:inline-block" data-i18n="tab_verify">🔍 검증</button>
+    <button onclick="showTab('login')"       id="t-login"       class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="login">🔐 로그인</button>
+    <button onclick="showTab('register')"    id="t-register"    class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="register">✍️ 가입</button>
+    <button onclick="showTab('admin')"       id="t-admin"       class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0 text-yellow-400">⚙️ 관리자</button>
+  </div>
+  <!-- 2단: 모바일 전용 서브탭 (sm 이하에서만 표시) -->
+  <div id="mobileSubNav" class="sm:hidden border-t border-white/5 bg-black/20 px-2 flex whitespace-nowrap overflow-x-auto scrollbar-hide">
+    <button onclick="showTab('verify')"      id="t-verify-m"    class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
+    <button onclick="showTab('leaderboard')" id="t-leaderboard-m" class="tab-off px-3 py-2 text-xs font-bold transition shrink-0">🏆 랭킹</button>
+    <button onclick="showTab('faq')"         id="t-faq-m"       class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
+    <button onclick="showTab('support')"     id="t-support-m"   class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
+    <button onclick="showTab('dashboard')"   id="t-dashboard-m" class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_dashboard">📊 통계</button>
+    <button onclick="showTab('referral')"    id="t-referral-m"  class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천</button>
   </div>
 </nav>
 
@@ -2208,16 +2218,16 @@ select option{background:#1a1a2e;color:#fff}
             <div id="betBalanceWarn" class="hidden mt-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-400 font-bold">
               ⚠️ 잔액이 부족합니다 (현재: <span id="betBalanceCur">0.00</span> USDT)
             </div>
-            <div class="flex gap-1.5 mt-2 flex-wrap">
-              <button onclick="addBet(1)"   class="px-2 py-1 text-xs bg-white/10 rounded-lg hover:bg-white/20 transition">+1</button>
-              <button onclick="addBet(5)"   class="px-2 py-1 text-xs bg-white/10 rounded-lg hover:bg-white/20 transition">+5</button>
-              <button onclick="addBet(10)"  class="px-2 py-1 text-xs bg-white/10 rounded-lg hover:bg-white/20 transition">+10</button>
-              <button onclick="addBet(50)"  class="px-2 py-1 text-xs bg-white/10 rounded-lg hover:bg-white/20 transition">+50</button>
-              <button onclick="addBet(100)" class="px-2 py-1 text-xs bg-white/10 rounded-lg hover:bg-white/20 transition">+100</button>
-              <button onclick="fracBet(0.25)" class="px-2 py-1 text-xs bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition">1/4</button>
-              <button onclick="fracBet(0.5)"  class="px-2 py-1 text-xs bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition">1/2</button>
-              <button onclick="maxBet()"    class="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition font-bold">ALL-IN</button>
-              <button onclick="clearBet()"  class="px-2 py-1 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition" data-i18n="clear">초기화</button>
+            <div class="flex gap-1.5 mt-2 flex-wrap" id="quickBetBtns">
+              <button onclick="setBet(1)"    class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition">1</button>
+              <button onclick="setBet(5)"    class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition">5</button>
+              <button onclick="setBet(10)"   class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition">10</button>
+              <button onclick="setBet(50)"   class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition">50</button>
+              <button onclick="setBet(100)"  class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition">100</button>
+              <button onclick="setBetFrac(0.25)" class="px-2 py-1.5 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 rounded-lg text-xs font-bold transition">1/4</button>
+              <button onclick="setBetFrac(0.5)"  class="px-2 py-1.5 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 rounded-lg text-xs font-bold transition">1/2</button>
+              <button onclick="maxBet()"     class="px-2 py-1.5 bg-yellow-500/30 hover:bg-yellow-500/50 rounded-lg text-xs font-bold text-yellow-300 transition">ALL-IN</button>
+              <button onclick="clearBet()"   class="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-xs font-bold text-red-300 transition" data-i18n="clear">초기화</button>
             </div>
           </div>
           <div class="grid grid-cols-2 gap-3">

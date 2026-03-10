@@ -635,11 +635,20 @@ const errMap = code => {
 // 탭 네비게이션
 // ═══════════════════════════════════════════════
 function showTab(name) {
+  // 방 상태 폴링 인터벌 정리 (게임 탭 이탈 시)
+  if (name !== 'game' && roomStatusInterval) {
+    clearInterval(roomStatusInterval)
+    roomStatusInterval = null
+  }
+
   const tabs = ['game','mypage','wallet','dashboard','referral','verify','leaderboard','faq','support','login','register','admin']
-  tabs.forEach(t => {
-    const p = $('p-' + t), btn = $('t-' + t)
-    if (p) p.classList.toggle('hidden', t !== name)
-    if (btn) { btn.classList.toggle('tab-on', t === name); btn.classList.toggle('tab-off', t !== name) }
+  tabs.forEach(tab => {
+    const p = $(  'p-' + tab)
+    const b1 = $( 't-' + tab)          // 1단 버튼
+    const b2 = $( 't-' + tab + '-m')   // 2단 모바일 버튼
+    if (p)  p.classList.toggle('hidden', tab !== name)
+    if (b1) { b1.classList.toggle('tab-on', tab === name); b1.classList.toggle('tab-off', tab !== name) }
+    if (b2) { b2.classList.toggle('tab-on', tab === name); b2.classList.toggle('tab-off', tab !== name) }
   })
   if (name === 'dashboard')   loadDashboard()
   if (name === 'referral')    loadReferral()
@@ -661,7 +670,11 @@ function updateUI() {
   const loginTabs = ['login','register']
   loginTabs.forEach(t => { const b = $('t-'+t); if (b) b.classList.toggle('hidden', loggedIn) })
   const userTabs = ['mypage','wallet','support']
-  userTabs.forEach(t => { const b = $('t-'+t); if (b) b.classList.toggle('hidden', !loggedIn) })
+  userTabs.forEach(t => {
+    const b1 = $('t-'+t), b2 = $('t-'+t+'-m')
+    if (b1) b1.classList.toggle('hidden', !loggedIn)
+    if (b2) b2.classList.toggle('hidden', !loggedIn)
+  })
   const adminTab = $('t-admin')
   if (adminTab) adminTab.classList.toggle('hidden', !(me && me.isAdmin))
 
@@ -829,16 +842,47 @@ function updateBetLimitsForRoom() {
   if (betAmt) {
     betAmt.min = r.minBet
     betAmt.max = r.maxBet
-    betAmt.placeholder = `${r.minBet} ~ ${r.maxBet.toLocaleString()} USDT`
+    betAmt.placeholder = `${r.minBet.toLocaleString()} ~ ${r.maxBet.toLocaleString()} USDT`
+    betAmt.value = ''
   }
+  // 베팅 금액 라벨 업데이트
   const label = document.querySelector('[data-i18n="bet_amount_label"]')
   if (label) {
-    label.textContent = `${t('bet_amount_label').split('(')[0].trim()} (USDT, ${t('room_bet_range')}: ${r.minBet}~${r.maxBet.toLocaleString()})`
+    label.textContent = `${t('bet_amount_label').split('(')[0].trim()} (${r.minBet.toLocaleString()}~${r.maxBet.toLocaleString()} USDT)`
   }
-  // 배당률 표시 업데이트
+  // 빠른 베팅 버튼 동적 업데이트
+  const quickBetArea = $('quickBetBtns')
+  if (quickBetArea) {
+    const max = r.maxBet
+    const min = r.minBet
+    // 방별로 빠른 베팅 금액 설정
+    let btns
+    if (max <= 100) {         // 터보
+      btns = [1, 5, 10, 25, 50, 100]
+    } else if (max <= 500) {  // 스탠다드
+      btns = [101, 150, 200, 300, 400, 500]
+    } else if (max <= 2000) { // 하이롤러
+      btns = [501, 700, 1000, 1500, 2000]
+    } else if (max <= 5000) { // VIP
+      btns = [2001, 2500, 3000, 4000, 5000]
+    } else {                  // 마스터
+      btns = [5001, 6000, 7000, 8000, 10000]
+    }
+    quickBetArea.innerHTML = btns.map(n =>
+      `<button onclick="setBet(${n})" class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition">${n >= 1000 ? (n/1000).toFixed(0)+'K' : n}</button>`
+    ).join('') +
+    `<button onclick="setBetFrac(0.25)" class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition">1/4</button>` +
+    `<button onclick="setBetFrac(0.5)"  class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition">1/2</button>` +
+    `<button onclick="maxBet()"         class="px-2 py-1.5 bg-yellow-500/30 hover:bg-yellow-500/50 rounded-lg text-xs font-bold text-yellow-300 transition">ALL-IN</button>` +
+    `<button onclick="clearBet()"       class="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-xs font-bold text-red-300 transition" data-i18n="clear">${t('clear')}</button>`
+  }
+  // 배당률·수수료 표시 업데이트
   currentPayout = r.payout
   const pd = $('gPayoutDisplay')
   if (pd) pd.textContent = r.payout + 'x'
+  // 수수료 표시 (있을 경우)
+  const feeEl = $('roomFeeDisplay')
+  if (feeEl) feeEl.textContent = (r.feeRate * 100) + '%'
 }
 
 // ═══════════════════════════════════════════════
@@ -919,8 +963,16 @@ async function refreshMe() {
 }
 
 function addBet(n) { const el=$('betAmt'); el.value = Math.round((parseFloat(el.value||0)+n)*100)/100; updatePayoutPreview() }
+function setBet(n)  { const el=$('betAmt'); el.value = n; updatePayoutPreview() }
 function clearBet() { $('betAmt').value = ''; updatePayoutPreview() }
-function maxBet()  { if (me) { $('betAmt').value = Math.min(me.balance, 1000); updatePayoutPreview() } }
+function maxBet()  {
+  if (me) {
+    const r = ROOM_CONFIGS[currentRoom]
+    const cap = r ? r.maxBet : 1000
+    $('betAmt').value = Math.min(me.balance, cap)
+    updatePayoutPreview()
+  }
+}
 
 // 예상 수령액 미리보기
 function updatePayoutPreview() {
@@ -952,10 +1004,13 @@ function updatePayoutPreview() {
 // 1/4, 1/2 비율 베팅
 function fracBet(frac) {
   if (!me) return
-  const val = Math.round(Math.min(me.balance, 1000) * frac * 100) / 100
+  const r = ROOM_CONFIGS[currentRoom]
+  const cap = r ? r.maxBet : 1000
+  const val = Math.round(Math.min(me.balance, cap) * frac * 100) / 100
   $('betAmt').value = val > 0 ? val : ''
   updatePayoutPreview()
 }
+const setBetFrac = fracBet  // 별칭
 
 async function doBet(choice) {
   if (!me) { showTab('login'); return }
