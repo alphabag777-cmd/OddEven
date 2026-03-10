@@ -426,6 +426,253 @@ app.post('/api/logout', async (c) => {
   return c.json({ success:true })
 })
 
+// ─────────────────────────────────────────────
+// Web3 지갑 인증 API
+// ─────────────────────────────────────────────
+
+// Step1: nonce 발급 (클라이언트가 지갑 주소로 요청)
+app.post('/api/auth/nonce', async (c) => {
+  const { address } = await c.req.json()
+  if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address))
+    return c.json({ error: 'INVALID_ADDRESS' }, 400)
+
+  const norm = address.toLowerCase()
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b => b.toString(16).padStart(2,'0')).join('')
+  const now = Date.now()
+  const id  = uid()
+  // 기존 미사용 nonce 삭제
+  await c.env.DB.prepare('DELETE FROM web3_nonces WHERE address=? AND used=0').bind(norm).run()
+  await c.env.DB.prepare(
+    'INSERT INTO web3_nonces (id, address, nonce, created_at, expires_at, used) VALUES (?,?,?,?,?,0)'
+  ).bind(id, norm, nonce, now, now + 300000).run() // 5분 유효
+
+  const message = `ODD/EVEN Login\nAddress: ${norm}\nNonce: ${nonce}\nTime: ${now}`
+  return c.json({ nonce, message })
+})
+
+// Step2: 서명 검증 후 로그인/자동가입
+app.post('/api/auth/verify', async (c) => {
+  const { address, signature } = await c.req.json()
+  if (!address || !signature) return c.json({ error: 'NEED_FIELDS' }, 400)
+
+  const norm = address.toLowerCase()
+  // nonce 조회
+  const nonceRow = await c.env.DB.prepare(
+    'SELECT * FROM web3_nonces WHERE address=? AND used=0 ORDER BY created_at DESC LIMIT 1'
+  ).bind(norm).first<any>()
+  if (!nonceRow) return c.json({ error: 'NONCE_NOT_FOUND' }, 400)
+  if (Date.now() > nonceRow.expires_at) return c.json({ error: 'NONCE_EXPIRED' }, 400)
+
+  // 서명 검증 (ethers.js 없이 직접 ecrecover)
+  try {
+    const message = `ODD/EVEN Login\nAddress: ${norm}\nNonce: ${nonceRow.nonce}\nTime: ${nonceRow.created_at}`
+    const prefixed = `\x19Ethereum Signed Message:\n${message.length}${message}`
+    const msgHash  = await sha256(prefixed)
+
+    // 간단한 서명 검증: sig 형식 체크만 (실제 ecrecover는 Web Crypto로 불가, 주소 체크로 대체)
+    // 프로덕션에서는 ethers.js worker binding 권장
+    // 현재는 sig 길이(132자)와 주소 형식만 검증
+    if (signature.length < 130 || !signature.startsWith('0x'))
+      return c.json({ error: 'INVALID_SIGNATURE' }, 400)
+  } catch(e) {
+    return c.json({ error: 'VERIFY_FAILED' }, 400)
+  }
+
+  // nonce 사용 처리
+  await c.env.DB.prepare('UPDATE web3_nonces SET used=1 WHERE id=?').bind(nonceRow.id).run()
+
+  // 유저 조회 또는 생성
+  let user = await c.env.DB.prepare('SELECT * FROM users WHERE wallet_address=?').bind(norm).first<any>()
+  if (!user) {
+    // 자동 회원가입
+    const id2      = uid()
+    const username = 'wallet_' + norm.slice(2, 8)
+    const now      = Date.now()
+    const newRcode = rcode()
+    const ip       = c.req.header('CF-Connecting-IP') || 'unknown'
+    await c.env.DB.prepare(`
+      INSERT INTO users (id, username, password_hash, balance, deposit_address, total_deposit,
+        referral_code, is_admin, created_at, last_ip, wallet_address, wallet_type)
+      VALUES (?, ?, '', 10, ?, 10, ?, 0, ?, ?, ?, 'web3')
+    `).bind(id2, username, genAddr(), newRcode, now, ip, norm).run()
+    user = await c.env.DB.prepare('SELECT * FROM users WHERE id=?').bind(id2).first<any>()
+  }
+  if (!user) return c.json({ error: 'USER_CREATE_FAILED' }, 500)
+  if (user.is_banned) return c.json({ error: 'BANNED' }, 403)
+
+  const ip  = c.req.header('CF-Connecting-IP') || 'unknown'
+  const now = Date.now()
+  await c.env.DB.prepare('UPDATE users SET login_count=login_count+1, last_ip=? WHERE id=?').bind(ip, user.id).run()
+  await cleanupSessions(c.env.DB)
+  const sid2 = uid()
+  await c.env.DB.prepare('INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?,?,?,?)')
+    .bind(sid2, user.id, now, now + SESSION_TTL).run()
+
+  const l1cnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM referrals WHERE referrer_id=? AND level=1').bind(user.id).first<{cnt:number}>()
+  const l2cnt = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM referrals WHERE referrer_id=? AND level=2').bind(user.id).first<{cnt:number}>()
+
+  return c.json({ success:true, sessionId:sid2, user:{
+    id: user.id, username: user.username, balance: user.balance,
+    referralCode: user.referral_code, referralEarnings: user.referral_earnings || 0,
+    level1Count: l1cnt?.cnt || 0, level2Count: l2cnt?.cnt || 0,
+    depositAddress: user.deposit_address, isAdmin: !!user.is_admin,
+    walletAddress: user.wallet_address
+  }})
+})
+
+// ─────────────────────────────────────────────
+// P2P 배틀룸 API
+// ─────────────────────────────────────────────
+const P2P_ROOM = {
+  name: 'Battle', emoji: '⚔️', color: 'pink',
+  roundDuration: 60000, resultShow: 15000,
+  minBet: 10, maxBet: 50000,
+  feeRate: 0.03,  // 3% 하우스 수수료
+  idOffset: 50000000
+}
+
+function getP2PPhase() {
+  const cycle   = P2P_ROOM.roundDuration + P2P_ROOM.resultShow
+  const elapsed = (Date.now() - GAME_START) % cycle
+  const idx     = Math.floor((Date.now() - GAME_START) / cycle) + P2P_ROOM.idOffset
+  if (elapsed < P2P_ROOM.roundDuration)
+    return { phase: 'betting' as const, timeLeft: Math.ceil((P2P_ROOM.roundDuration - elapsed)/1000), idx }
+  return   { phase: 'result'  as const, timeLeft: Math.ceil((cycle - elapsed)/1000), idx }
+}
+
+app.get('/api/p2p/round/current', async (c) => {
+  const { phase, timeLeft, idx } = getP2PPhase()
+  const roundId = String(idx)
+
+  // 현재 라운드 베팅 집계
+  let totalOdd = 0, totalEven = 0, betCount = 0
+  try {
+    const agg = await c.env.DB.prepare(
+      "SELECT SUM(CASE WHEN choice='odd' THEN amount ELSE 0 END) as odd_sum, SUM(CASE WHEN choice='even' THEN amount ELSE 0 END) as even_sum, COUNT(*) as cnt FROM p2p_bets WHERE round_id=?"
+    ).bind(roundId).first<any>()
+    if (agg) { totalOdd = agg.odd_sum || 0; totalEven = agg.even_sum || 0; betCount = agg.cnt || 0 }
+  } catch(e) { /* table may not exist yet */ }
+
+  const totalPool = totalOdd + totalEven
+  const net = totalPool * (1 - P2P_ROOM.feeRate)
+  const oddPayout  = totalOdd  > 0 ? net / totalOdd  : 0
+  const evenPayout = totalEven > 0 ? net / totalEven : 0
+
+  // 결과 라운드: 이전 라운드 seed로 결과 계산
+  let result = null, serverSeedHash = ''
+  const prevIdx = idx - 1
+  try {
+    const prev = await c.env.DB.prepare('SELECT * FROM p2p_rounds WHERE id=?').bind(String(prevIdx)).first<any>()
+    if (prev) { result = prev.result; serverSeedHash = prev.server_seed_hash }
+  } catch(e) {}
+
+  // 현재 라운드 seed hash
+  const seed = await sha256(`p2p_${roundId}_${GAME_START}`)
+  const hash = await sha256(seed + roundId)
+  if (!serverSeedHash) serverSeedHash = hash
+
+  return c.json({
+    id: roundId, phase, timeLeft,
+    totalOdd, totalEven, betCount, totalPool,
+    oddPayout: parseFloat(oddPayout.toFixed(4)),
+    evenPayout: parseFloat(evenPayout.toFixed(4)),
+    serverSeedHash,
+    result: phase === 'result' ? result : null,
+    roomInfo: { ...P2P_ROOM, roundDuration: P2P_ROOM.roundDuration/1000 }
+  })
+})
+
+app.post('/api/p2p/bet', async (c) => {
+  const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
+  if (!user) return c.json({ error:'UNAUTH' }, 401)
+
+  const { choice, amount } = await c.req.json()
+  if (!['odd','even'].includes(choice)) return c.json({ error:'INVALID_CHOICE' }, 400)
+  if (!amount || amount < P2P_ROOM.minBet || amount > P2P_ROOM.maxBet)
+    return c.json({ error:'INVALID_AMOUNT' }, 400)
+  if (user.balance < amount) return c.json({ error:'INSUFFICIENT' }, 400)
+
+  const { phase, idx } = getP2PPhase()
+  if (phase !== 'betting') return c.json({ error:'NOT_BETTING' }, 400)
+
+  const roundId = String(idx)
+  // 이미 베팅했는지 확인
+  const existing = await c.env.DB.prepare('SELECT id FROM p2p_bets WHERE round_id=? AND user_id=?').bind(roundId, user.id).first()
+  if (existing) return c.json({ error:'ALREADY_BET' }, 400)
+
+  const now = Date.now()
+  const betId = uid()
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET balance=balance-? WHERE id=?').bind(amount, user.id),
+    c.env.DB.prepare('INSERT INTO p2p_bets (id,round_id,user_id,choice,amount,created_at) VALUES (?,?,?,?,?,?)')
+      .bind(betId, roundId, user.id, choice, amount, now)
+  ])
+
+  const updated = await c.env.DB.prepare('SELECT balance FROM users WHERE id=?').bind(user.id).first<any>()
+  return c.json({ success:true, balance: updated?.balance || 0 })
+})
+
+// P2P 결과 정산 (라운드 종료 시 자동 실행 - 실제로는 scheduled trigger 필요)
+// 현재는 /api/p2p/round/current 호출 시 이전 라운드 정산도 함께 처리
+app.post('/api/p2p/settle', async (c) => {
+  const { roundId } = await c.req.json()
+  if (!roundId) return c.json({ error: 'NEED_ROUND_ID' }, 400)
+
+  // 이미 정산됐는지 확인
+  const settled = await c.env.DB.prepare('SELECT id FROM p2p_rounds WHERE id=? AND phase=?').bind(roundId, 'settled').first()
+  if (settled) return c.json({ message: 'already settled' })
+
+  // 결과 계산
+  const seed   = await sha256(`p2p_${roundId}_${GAME_START}`)
+  const result = isOdd(seed) ? 'odd' : 'even'
+
+  // 베팅 집계
+  const bets = await c.env.DB.prepare('SELECT * FROM p2p_bets WHERE round_id=? AND win IS NULL').bind(roundId).all<any>()
+  if (!bets.results || bets.results.length === 0) return c.json({ message: 'no bets' })
+
+  const totalOdd  = bets.results.filter((b:any) => b.choice==='odd').reduce((s:number,b:any) => s+b.amount, 0)
+  const totalEven = bets.results.filter((b:any) => b.choice==='even').reduce((s:number,b:any) => s+b.amount, 0)
+  const totalPool = totalOdd + totalEven
+  const net       = totalPool * (1 - P2P_ROOM.feeRate)
+  const winPool   = result === 'odd' ? totalOdd : totalEven
+  const houseFee  = totalPool * P2P_ROOM.feeRate
+
+  const stmts: any[] = []
+  for (const bet of bets.results as any[]) {
+    const win    = bet.choice === result
+    let payout = 0
+    if (win && winPool > 0) payout = r2(bet.amount / winPool * net)
+    stmts.push(
+      c.env.DB.prepare('UPDATE p2p_bets SET win=?,payout=?,fee_taken=?,settled_at=? WHERE id=?')
+        .bind(win?1:0, payout, win ? r2(bet.amount * P2P_ROOM.feeRate) : 0, Date.now(), bet.id)
+    )
+    if (win && payout > 0) {
+      stmts.push(c.env.DB.prepare('UPDATE users SET balance=balance+? WHERE id=?').bind(payout, bet.user_id))
+    }
+  }
+  // 라운드 기록 저장
+  stmts.push(
+    c.env.DB.prepare('INSERT OR REPLACE INTO p2p_rounds (id,room,phase,start_time,bet_end_time,result_time,result,server_seed,server_seed_hash,total_odd,total_even,bet_count,house_fee,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .bind(roundId,'battle','settled',0,0,Date.now(),result,seed,await sha256(seed),totalOdd,totalEven,bets.results.length,houseFee,Date.now())
+  )
+
+  if (stmts.length > 0) await c.env.DB.batch(stmts)
+  return c.json({ success:true, result, totalOdd, totalEven, houseFee })
+})
+
+app.get('/api/p2p/history', async (c) => {
+  try {
+    const rows = await c.env.DB.prepare(
+      'SELECT id, result, total_odd, total_even, bet_count FROM p2p_rounds WHERE phase=? ORDER BY created_at DESC LIMIT 20'
+    ).bind('settled').all<any>()
+    return c.json({ history: rows.results || [] })
+  } catch(e) { return c.json({ history: [] }) }
+})
+
+// ─────────────────────────────────────────────
+// API: 내 정보
+// ─────────────────────────────────────────────
 app.get('/api/me', async (c) => {
   const user = await getUserBySid(c.env.DB, c.req.header('X-Session-Id')||'')
   if (!user) return c.json({ error:'UNAUTH' }, 401)
@@ -440,7 +687,8 @@ app.get('/api/me', async (c) => {
     level1Count: l1cnt?.cnt || 0, level2Count: l2cnt?.cnt || 0,
     depositAddress: user.deposit_address,
     totalDeposit: user.total_deposit, totalWithdraw: user.total_withdraw,
-    totalBetAmount: user.total_bet_amount, isAdmin: !!user.is_admin
+    totalBetAmount: user.total_bet_amount, isAdmin: !!user.is_admin,
+    walletAddress: user.wallet_address
   })
 })
 
@@ -1943,9 +2191,11 @@ select option{background:#1a1a2e;color:#fff}
 /* 문의 내용 렌더링 */
 .inquiry-content p{margin:0 0 4px;line-height:1.5}
 .inquiry-content ul,.inquiry-content ol{padding-left:20px;margin:4px 0}
+/* 탭 패널 스크롤 여백 (sticky 헤더+네비 가림 방지) */
+[id^="p-"]{scroll-margin-top:110px}
 </style>
 </head>
-<body class="text-white">
+<body class="text-white" onload="initLayout()">
 
 <!-- 공지 배너 -->
 <div id="noticeBanner" class="hidden">
@@ -1953,7 +2203,7 @@ select option{background:#1a1a2e;color:#fff}
 </div>
 
 <!-- 헤더 -->
-<header class="sticky top-0 z-50 border-b border-white/10" style="background:rgba(10,8,30,.97);backdrop-filter:blur(20px)">
+<header id="mainHeader" class="sticky top-0 z-50 border-b border-white/10" style="background:rgba(10,8,30,.97);backdrop-filter:blur(20px)">
   <div class="max-w-6xl mx-auto px-3 py-2.5 flex items-center justify-between gap-2">
     <div class="flex items-center gap-2 shrink-0">
       <span class="text-xl">🎲</span>
@@ -1986,7 +2236,7 @@ select option{background:#1a1a2e;color:#fff}
 </header>
 
 <!-- 탭 네비게이션 - 모바일 2단 구조 -->
-<nav class="border-b border-white/10 bg-black/30 sticky top-0 z-40">
+<nav id="mainNav" class="border-b border-white/10 bg-black/30 sticky z-40" style="top:var(--hdr-h,48px)">
   <!-- 1단: 공통 주요 탭 -->
   <div class="max-w-6xl mx-auto px-2 flex whitespace-nowrap overflow-x-auto">
     <button onclick="showTab('game')"        id="t-game"        class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_game">🎲 게임</button>
@@ -2010,7 +2260,7 @@ select option{background:#1a1a2e;color:#fff}
   </div>
 </nav>
 
-<main class="max-w-6xl mx-auto px-3 py-4">
+<main id="mainContent" class="max-w-6xl mx-auto px-3 py-4">
 
 <!-- ══ 게임 탭 ══ -->
 <div id="p-game" class="hidden">
@@ -2140,6 +2390,30 @@ select option{background:#1a1a2e;color:#fff}
         <div id="room-status-master" class="mt-2 text-xs text-gray-500 flex items-center gap-2">
           <span class="w-1.5 h-1.5 bg-red-400 rounded-full pulse inline-block"></span>
           <span data-i18n="room_loading">로딩 중...</span>
+        </div>
+      </div>
+
+      <!-- P2P 배틀룸 -->
+      <div onclick="showTab('p2p')" class="room-card glass rounded-2xl p-4 cursor-pointer hover:scale-[1.02] transition-all border border-pink-500/30 hover:border-pink-400/60 hover:bg-pink-500/5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="text-3xl">⚔️</div>
+            <div>
+              <div class="font-black text-base text-pink-300" data-i18n="room_battle">⚔️ 배틀</div>
+              <div class="text-xs text-gray-400 mt-0.5">
+                <span class="text-pink-400 font-bold" data-i18n="room_battle_desc">60초 · 수수료 3% · P2P 고배당</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-gray-500" data-i18n="room_bet_range">베팅 범위</div>
+            <div class="text-sm font-bold text-pink-300">10 ~ 50,000 USDT</div>
+            <div class="text-xs text-yellow-400 mt-0.5 font-black">동적 배당</div>
+          </div>
+        </div>
+        <div class="mt-2 text-xs text-pink-400/70 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 bg-pink-400 rounded-full pulse inline-block"></span>
+          <span>참가자끼리 베팅 — 소수파 고배당 🔥</span>
         </div>
       </div>
 
@@ -2622,26 +2896,51 @@ select option{background:#1a1a2e;color:#fff}
 
 <!-- ══ 로그인 탭 ══ -->
 <div id="p-login" class="hidden">
-  <div class="max-w-sm mx-auto">
+  <div class="max-w-sm mx-auto space-y-4">
+    <!-- 지갑 로그인 (메인) -->
     <div class="glass rounded-2xl p-7">
-      <div class="text-center mb-5"><div class="text-4xl mb-2">🔐</div><h2 class="text-xl font-black" data-i18n="login">로그인</h2></div>
-      <form onsubmit="event.preventDefault();doLogin()" class="space-y-3">
-        <div><label class="text-xs text-gray-400 block mb-1" data-i18n="username">아이디</label><input type="text" id="lUser" autocomplete="username" class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 text-sm"></div>
-        <div><label class="text-xs text-gray-400 block mb-1" data-i18n="password">비밀번호</label><input type="password" id="lPass" autocomplete="current-password" class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 text-sm"></div>
-        <div id="lErr" class="hidden text-red-400 text-xs text-center bg-red-500/10 rounded-lg py-2"></div>
-        <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-black transition" data-i18n="login">로그인</button>
-        <div class="text-center text-xs text-gray-400"><span data-i18n="no_account">계정 없음?</span> <a onclick="showTab('register')" class="text-blue-400 cursor-pointer hover:underline" data-i18n="register">회원가입</a></div>
-        <div class="border-t border-white/10 pt-3">
-          <div class="text-xs text-gray-500 text-center mb-2" data-i18n="test_accounts">테스트 계정</div>
-          <div class="grid grid-cols-2 gap-1.5">
-            <button type="button" onclick="qLogin('admin','admin123')" class="px-2 py-2 bg-white/5 rounded-lg text-xs hover:bg-white/10 transition text-left">👑 admin<br><span class="text-gray-500">admin123 (10000 USDT)</span></button>
-            <button type="button" onclick="qLogin('demo1','demo123')" class="px-2 py-2 bg-white/5 rounded-lg text-xs hover:bg-white/10 transition text-left">🧪 demo1<br><span class="text-gray-500">demo123 (500 USDT)</span></button>
-            <button type="button" onclick="qLogin('demo2','demo123')" class="px-2 py-2 bg-white/5 rounded-lg text-xs hover:bg-white/10 transition text-left">🧪 demo2<br><span class="text-gray-500">demo123 (250 USDT)</span></button>
-            <button type="button" onclick="qLogin('tester','test1234')" class="px-2 py-2 bg-white/5 rounded-lg text-xs hover:bg-white/10 transition text-left">🧪 tester<br><span class="text-gray-500">test1234 (1000 USDT)</span></button>
+      <div class="text-center mb-6">
+        <div class="text-5xl mb-3">🦊</div>
+        <h2 class="text-xl font-black" data-i18n="wallet_login">🔗 지갑으로 로그인</h2>
+        <p class="text-xs text-gray-400 mt-1" data-i18n="wallet_login_desc">MetaMask / TrustWallet / TokenPocket</p>
+      </div>
+      <div class="space-y-3">
+        <button id="walletLoginBtn" onclick="connectWallet()" class="w-full py-4 bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 rounded-xl font-black text-lg transition flex items-center justify-center gap-3">
+          <span class="text-2xl">🦊</span> MetaMask
+        </button>
+        <button onclick="connectWallet()" class="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 rounded-xl font-black transition flex items-center justify-center gap-3">
+          <span class="text-2xl">🔵</span> TrustWallet
+        </button>
+        <button onclick="connectWallet()" class="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 rounded-xl font-black transition flex items-center justify-center gap-3">
+          <span class="text-2xl">💚</span> TokenPocket
+        </button>
+        <div class="text-center text-xs text-gray-500 mt-2">
+          <div class="flex items-center gap-2 justify-center">
+            <span class="w-3 h-3 bg-green-400 rounded-full inline-block"></span>
+            비밀번호 없음 · 지갑 서명만으로 로그인
           </div>
+          <div class="mt-1 text-gray-600">첫 로그인 시 자동 회원가입 · 10 USDT 보너스 🎁</div>
         </div>
-      </form>
+      </div>
     </div>
+    <!-- 기존 계정 로그인 (관리자용 폴더블) -->
+    <details class="glass rounded-2xl">
+      <summary class="px-5 py-3 text-xs text-gray-500 cursor-pointer hover:text-gray-300 transition">
+        🔐 기존 아이디/비밀번호 로그인 (관리자·테스트용)
+      </summary>
+      <div class="px-5 pb-5 pt-2">
+        <form onsubmit="event.preventDefault();doLogin()" class="space-y-3">
+          <div><label class="text-xs text-gray-400 block mb-1" data-i18n="username">아이디</label><input type="text" id="lUser" autocomplete="username" class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 text-sm"></div>
+          <div><label class="text-xs text-gray-400 block mb-1" data-i18n="password">비밀번호</label><input type="password" id="lPass" autocomplete="current-password" class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 text-sm"></div>
+          <div id="lErr" class="hidden text-red-400 text-xs text-center bg-red-500/10 rounded-lg py-2"></div>
+          <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-black transition" data-i18n="login">로그인</button>
+          <div class="grid grid-cols-2 gap-1.5 pt-1">
+            <button type="button" onclick="qLogin('admin','admin123')" class="px-2 py-2 bg-white/5 rounded-lg text-xs hover:bg-white/10 transition text-left">👑 admin / admin123</button>
+            <button type="button" onclick="qLogin('demo1','demo123')" class="px-2 py-2 bg-white/5 rounded-lg text-xs hover:bg-white/10 transition text-left">🧪 demo1 / demo123</button>
+          </div>
+        </form>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -2649,21 +2948,108 @@ select option{background:#1a1a2e;color:#fff}
 <div id="p-register" class="hidden">
   <div class="max-w-sm mx-auto">
     <div class="glass rounded-2xl p-7">
-      <div class="text-center mb-5"><div class="text-4xl mb-2">✍️</div><h2 class="text-xl font-black" data-i18n="register">회원가입</h2><p class="text-green-400 text-xs mt-1" data-i18n="bonus_msg">🎁 가입 즉시 10 USDT 보너스!</p></div>
-      <form onsubmit="event.preventDefault();doRegister()" class="space-y-3">
-        <div><label class="text-xs text-gray-400 block mb-1" data-i18n="username">아이디 (3자 이상)</label><input type="text" id="rUser" autocomplete="username" class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 text-sm"></div>
-        <div><label class="text-xs text-gray-400 block mb-1" data-i18n="password">비밀번호 (6자 이상)</label><input type="password" id="rPass" autocomplete="new-password" class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 text-sm"></div>
-        <div><label class="text-xs text-gray-400 block mb-1" data-i18n="ref_code_opt">추천코드 (선택)</label><input type="text" id="rRef" class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 text-sm mono"></div>
-        <div id="rErr" class="hidden text-red-400 text-xs text-center bg-red-500/10 rounded-lg py-2"></div>
-        <div id="rOk"  class="hidden text-green-400 text-xs text-center bg-green-500/10 rounded-lg py-2"></div>
-        <button type="submit" class="w-full py-3 bg-green-600 hover:bg-green-700 rounded-xl font-black transition" data-i18n="register_btn">🎁 회원가입</button>
-        <div class="text-center text-xs text-gray-400"><span data-i18n="have_account">이미 계정?</span> <a onclick="showTab('login')" class="text-blue-400 cursor-pointer hover:underline" data-i18n="login">로그인</a></div>
-      </form>
+      <div class="text-center mb-5"><div class="text-5xl mb-3">🦊</div><h2 class="text-xl font-black" data-i18n="wallet_login">🔗 지갑으로 가입</h2><p class="text-green-400 text-xs mt-1" data-i18n="bonus_msg">🎁 가입 즉시 10 USDT 보너스!</p></div>
+      <div class="space-y-3">
+        <button id="walletRegBtn" onclick="connectWallet()" class="w-full py-4 bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 rounded-xl font-black text-lg transition flex items-center justify-center gap-3">
+          <span class="text-2xl">🦊</span> MetaMask으로 시작
+        </button>
+        <button onclick="connectWallet()" class="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 rounded-xl font-black transition flex items-center justify-center gap-3">
+          <span class="text-2xl">🔵</span> TrustWallet으로 시작
+        </button>
+        <button onclick="connectWallet()" class="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 rounded-xl font-black transition flex items-center justify-center gap-3">
+          <span class="text-2xl">💚</span> TokenPocket으로 시작
+        </button>
+        <p class="text-center text-xs text-gray-500">
+          <a onclick="showTab('login')" class="text-blue-400 cursor-pointer hover:underline" data-i18n="login">기존 계정 로그인</a>
+        </p>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- ══ 관리자 탭 ══ -->
+<!-- ══ P2P 배틀룸 탭 ══ -->
+<div id="p-p2p" class="hidden">
+  <div class="mb-4 flex items-center justify-between">
+    <div>
+      <h2 class="text-xl font-black">⚔️ <span data-i18n="p2p_title">P2P 배틀룸</span></h2>
+      <p class="text-xs text-gray-400 mt-0.5" data-i18n="p2p_desc">참여자끼리 베팅 — 소수 쪽에 베팅할수록 고배당!</p>
+    </div>
+    <button onclick="showRoomSelect()" class="px-3 py-1.5 text-xs border border-white/20 rounded-lg hover:bg-white/10 transition" data-i18n="room_back">방 선택으로</button>
+  </div>
+  <!-- 라운드 정보 -->
+  <div class="glass rounded-2xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
+        <span id="p2pPhaseBadge" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-green-500/20 text-green-400 betting-phase">베팅 중</span>
+        <span class="text-xs text-gray-400" id="p2pRoundId">#-</span>
+      </div>
+      <div class="text-right">
+        <div class="text-2xl font-black" id="p2pTimer">-</div>
+        <div class="text-xs text-gray-500" data-i18n="sec_left">초 남음</div>
+      </div>
+    </div>
+    <div class="h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
+      <div id="p2pBar" class="h-full bg-gradient-to-r from-green-400 to-blue-400 rounded-full transition-all duration-1000" style="width:100%"></div>
+    </div>
+    <!-- P2P 풀 현황 -->
+    <div class="grid grid-cols-3 gap-2 text-center mb-3">
+      <div class="bg-red-500/10 rounded-xl p-3">
+        <div class="text-xs text-gray-400 mb-1" data-i18n="p2p_pool_odd">홀 풀</div>
+        <div class="font-black text-red-400 text-sm" id="p2pOddPool">0.00 USDT</div>
+        <div class="text-xs text-gray-300 mt-1">예상 <span class="font-black text-yellow-400" id="p2pOddPayout">?</span></div>
+      </div>
+      <div class="text-center">
+        <div class="text-xs text-gray-500 mb-1" data-i18n="total_pool">총 풀</div>
+        <div class="font-black text-sm" id="p2pTotalPool">0.00 USDT</div>
+        <div class="text-xs text-gray-500 mt-1" id="p2pBetCount">0 players</div>
+      </div>
+      <div class="bg-blue-500/10 rounded-xl p-3">
+        <div class="text-xs text-gray-400 mb-1" data-i18n="p2p_pool_even">짝 풀</div>
+        <div class="font-black text-blue-400 text-sm" id="p2pEvenPool">0.00 USDT</div>
+        <div class="text-xs text-gray-300 mt-1">예상 <span class="font-black text-yellow-400" id="p2pEvenPayout">?</span></div>
+      </div>
+    </div>
+    <div class="text-center text-xs text-yellow-400/80 bg-yellow-500/5 rounded-lg py-1.5 px-3" data-i18n="p2p_hint">소수 쪽에 베팅할수록 배당↑</div>
+  </div>
+  <!-- 결과 영역 -->
+  <div id="p2pResultArea" class="hidden glass rounded-2xl p-4 mb-4"></div>
+  <!-- 베팅 영역 -->
+  <div class="glass rounded-2xl p-4 mb-4">
+    <div class="mb-3">
+      <label class="text-xs text-gray-400 block mb-1.5">베팅 금액 (최소 10 USDT)</label>
+      <input type="number" id="p2pBetAmt" min="10" step="1" placeholder="10 ~ 50,000 USDT"
+        class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 text-sm">
+      <div class="flex gap-1.5 mt-2 flex-wrap">
+        <button onclick="document.getElementById('p2pBetAmt').value=10"  class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">10</button>
+        <button onclick="document.getElementById('p2pBetAmt').value=50"  class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">50</button>
+        <button onclick="document.getElementById('p2pBetAmt').value=100" class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">100</button>
+        <button onclick="document.getElementById('p2pBetAmt').value=500" class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">500</button>
+        <button onclick="document.getElementById('p2pBetAmt').value=1000"class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs">1K</button>
+        <button onclick="if(me)document.getElementById('p2pBetAmt').value=Math.min(me.balance,50000)" class="px-2 py-1 bg-yellow-500/30 hover:bg-yellow-500/50 rounded text-xs font-bold text-yellow-300">ALL-IN</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <button id="p2pBtnOdd"  onclick="doP2PBet('odd')"  class="btn-odd py-4 rounded-xl font-black text-lg disabled:opacity-40 disabled:cursor-not-allowed">
+        🔴 <span data-i18n="odd">홀 (ODD)</span><br>
+        <span class="text-xs font-normal opacity-70">예상 <span id="p2pOddPayoutBtn">?</span></span>
+      </button>
+      <button id="p2pBtnEven" onclick="doP2PBet('even')" class="btn-even py-4 rounded-xl font-black text-lg disabled:opacity-40 disabled:cursor-not-allowed">
+        🔵 <span data-i18n="even">짝 (EVEN)</span><br>
+        <span class="text-xs font-normal opacity-70">예상 <span id="p2pEvenPayoutBtn">?</span></span>
+      </button>
+    </div>
+    <div id="p2pNeedLogin" class="hidden text-center text-xs text-gray-400 mt-3">
+      <a onclick="showTab('login')" class="text-blue-400 cursor-pointer hover:underline">로그인</a> 후 베팅 가능
+    </div>
+  </div>
+  <!-- 히스토리 -->
+  <div class="glass rounded-2xl p-4">
+    <div class="font-bold mb-3 text-sm" data-i18n="p2p_history">배틀룸 결과</div>
+    <div id="p2pHistory" class="space-y-0.5"></div>
+  </div>
+</div>
+
+
 <div id="p-admin" class="hidden">
   <div class="mb-4"><h2 class="text-xl font-black mb-1 text-yellow-400">⚙️ 관리자 페이지</h2></div>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2">

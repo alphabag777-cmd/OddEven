@@ -140,6 +140,19 @@ const I18N = {
     room_bet_range:'베팅 범위',room_loading:'로딩 중...',room_back:'방 선택으로',
     room_players:'명 참여 중',room_phase_betting:'베팅 중',room_phase_result:'결과 확인',
     room_fee:'수수료',room_payout_rate:'배당률',
+    // P2P 배틀룸
+    room_battle:'⚔️ 배틀',room_battle_desc:'60초 · 수수료 3% · P2P 고배당',
+    p2p_title:'⚔️ P2P 배틀룸',p2p_desc:'참여자끼리 베팅 — 소수 쪽에 베팅하면 고배당!',
+    p2p_odd_payout:'홀 예상 배당',p2p_even_payout:'짝 예상 배당',
+    p2p_pool_odd:'홀 풀',p2p_pool_even:'짝 풀',
+    p2p_dynamic:'배당률 실시간 변동',p2p_hint:'소수 쪽에 베팅할수록 배당↑',
+    p2p_history:'배틀룸 결과',
+    // 지갑 로그인
+    wallet_login:'🔗 지갑으로 로그인',wallet_login_desc:'MetaMask / TrustWallet / TokenPocket',
+    wallet_connecting:'지갑 연결 중...',wallet_sign:'서명 요청 중...',
+    wallet_no_provider:'지갑 앱을 설치해주세요 (MetaMask 등)',
+    wallet_connected:'지갑 연결됨',wallet_address:'지갑 주소',
+    wallet_login_ok:'지갑 로그인 성공!',wallet_login_fail:'지갑 로그인 실패',
   },
   en: {
     blockchain_fair:'Blockchain Fair',login:'Login',register:'Register',logout:'Logout',
@@ -279,6 +292,17 @@ const I18N = {
     room_bet_range:'Bet Range',room_loading:'Loading...',room_back:'Back to Rooms',
     room_players:'players',room_phase_betting:'Betting',room_phase_result:'Result',
     room_fee:'Fee',room_payout_rate:'Payout',
+    room_battle:'⚔️ Battle',room_battle_desc:'60s · 3% fee · P2P High Payout',
+    p2p_title:'⚔️ P2P Battle Room',p2p_desc:'Bet against each other — bet on the minority side for high payout!',
+    p2p_odd_payout:'ODD Est.Payout',p2p_even_payout:'EVEN Est.Payout',
+    p2p_pool_odd:'ODD Pool',p2p_pool_even:'EVEN Pool',
+    p2p_dynamic:'Payout changes in real-time',p2p_hint:'Fewer bets = Higher payout!',
+    p2p_history:'Battle Results',
+    wallet_login:'🔗 Login with Wallet',wallet_login_desc:'MetaMask / TrustWallet / TokenPocket',
+    wallet_connecting:'Connecting wallet...',wallet_sign:'Requesting signature...',
+    wallet_no_provider:'Please install a wallet app (MetaMask etc.)',
+    wallet_connected:'Wallet connected',wallet_address:'Wallet Address',
+    wallet_login_ok:'Wallet login successful!',wallet_login_fail:'Wallet login failed',
   },
   zh: {
     blockchain_fair:'区块链公平',login:'登录',register:'注册',logout:'退出',
@@ -418,6 +442,17 @@ const I18N = {
     room_bet_range:'投注范围',room_loading:'加载中...',room_back:'返回房间选择',
     room_players:'人参与',room_phase_betting:'投注中',room_phase_result:'查看结果',
     room_fee:'手续费',room_payout_rate:'赔率',
+    room_battle:'⚔️ 对战',room_battle_desc:'60秒 · 手续费3% · P2P高赔率',
+    p2p_title:'⚔️ P2P对战室',p2p_desc:'参与者互相对赌 — 少数方下注可获高赔率!',
+    p2p_odd_payout:'单预估赔率',p2p_even_payout:'双预估赔率',
+    p2p_pool_odd:'单池',p2p_pool_even:'双池',
+    p2p_dynamic:'赔率实时变动',p2p_hint:'下注越少 = 赔率越高!',
+    p2p_history:'对战结果',
+    wallet_login:'🔗 钱包登录',wallet_login_desc:'MetaMask / TrustWallet / TokenPocket',
+    wallet_connecting:'连接钱包中...',wallet_sign:'签名请求中...',
+    wallet_no_provider:'请安装钱包应用 (MetaMask等)',
+    wallet_connected:'钱包已连接',wallet_address:'钱包地址',
+    wallet_login_ok:'钱包登录成功!',wallet_login_fail:'钱包登录失败',
   },
   ja: {
     blockchain_fair:'ブロックチェーン公正',login:'ログイン',register:'登録',logout:'ログアウト',
@@ -557,6 +592,17 @@ const I18N = {
     room_bet_range:'ベット範囲',room_loading:'読み込み中...',room_back:'ルーム選択に戻る',
     room_players:'人が参加中',room_phase_betting:'ベット中',room_phase_result:'結果確認',
     room_fee:'手数料',room_payout_rate:'配当率',
+    room_battle:'⚔️ バトル',room_battle_desc:'60秒 · 手数料3% · P2P高配当',
+    p2p_title:'⚔️ P2P バトルルーム',p2p_desc:'参加者同士でベット — 少数派に賭けるほど高配当!',
+    p2p_odd_payout:'単推定配当',p2p_even_payout:'双推定配当',
+    p2p_pool_odd:'単プール',p2p_pool_even:'双プール',
+    p2p_dynamic:'配当はリアルタイム変動',p2p_hint:'少ない方に賭けると高配当!',
+    p2p_history:'バトル結果',
+    wallet_login:'🔗 ウォレットでログイン',wallet_login_desc:'MetaMask / TrustWallet / TokenPocket',
+    wallet_connecting:'ウォレット接続中...',wallet_sign:'署名リクエスト中...',
+    wallet_no_provider:'ウォレットアプリをインストールしてください (MetaMask等)',
+    wallet_connected:'ウォレット接続済み',wallet_address:'ウォレットアドレス',
+    wallet_login_ok:'ウォレットログイン成功!',wallet_login_fail:'ウォレットログイン失敗',
   }
 }
 
@@ -590,6 +636,7 @@ let myBet = null
 let currentPayout = 1.90  // 게임 배당률 (동적 업데이트)
 let currentRoom = localStorage.getItem('currentRoom') || 'standard'  // 현재 선택된 방
 let roomStatusInterval = null  // 방 상태 폴링 인터벌
+let p2pInterval = null         // P2P 방 폴링 인터벌
 
 const $ = id => document.getElementById(id)
 const fmtU = n => (Math.round(n * 100) / 100).toFixed(2)
@@ -645,17 +692,34 @@ function showTab(name) {
     clearInterval(roomStatusInterval)
     roomStatusInterval = null
   }
+  // P2P 인터벌 정리
+  if (name !== 'p2p' && p2pInterval) {
+    clearInterval(p2pInterval)
+    p2pInterval = null
+  }
 
   // 모든 패널 숨기기 / 선택 패널 보이기
-  const tabs = ['game','mypage','wallet','dashboard','referral','verify','leaderboard','faq','support','login','register','admin']
+  const tabs = ['game','mypage','wallet','dashboard','referral','verify','leaderboard','faq','support','login','register','admin','p2p']
   tabs.forEach(tab => {
     const p  = $('p-' + tab)
-    const b1 = $('t-' + tab)        // 1단 버튼 (없을 수 있음)
-    const b2 = $('t-' + tab + '-m') // 2단 모바일 버튼 (없을 수 있음)
+    const b1 = $('t-' + tab)
+    const b2 = $('t-' + tab + '-m')
     if (p)  p.classList.toggle('hidden', tab !== name)
     if (b1) { b1.classList.toggle('tab-on', tab === name); b1.classList.toggle('tab-off', tab !== name) }
     if (b2) { b2.classList.toggle('tab-on', tab === name); b2.classList.toggle('tab-off', tab !== name) }
   })
+
+  // 탭 내용으로 스크롤 (sticky 헤더+네비 아래로 정확히 스크롤)
+  const panel = $('p-' + name)
+  if (panel) {
+    setTimeout(() => {
+      const hdr = $('mainHeader')
+      const nav = $('mainNav')
+      const offset = (hdr ? hdr.offsetHeight : 48) + (nav ? nav.offsetHeight : 38) + 8
+      const top = panel.getBoundingClientRect().top + window.scrollY - offset
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    }, 50)
+  }
 
   // 각 탭 데이터 로드
   try {
@@ -669,9 +733,22 @@ function showTab(name) {
     else if (name === 'support')     loadSupport()
     else if (name === 'leaderboard') loadLeaderboard('total_bet')
     else if (name === 'game')        showRoomSelect()
+    else if (name === 'p2p')         loadP2PRoom()
   } catch(e) {
     console.error('showTab error:', e)
   }
+}
+
+function initLayout() {
+  // CSS 변수 설정: 네비 top 위치 = 헤더 높이
+  function setNavTop() {
+    const hdr = $('mainHeader')
+    if (hdr) {
+      document.documentElement.style.setProperty('--hdr-h', hdr.offsetHeight + 'px')
+    }
+  }
+  setNavTop()
+  window.addEventListener('resize', setNavTop)
 }
 
 function updateUI() {
@@ -3172,6 +3249,180 @@ async function encodeAttachments(files) {
 }
 
 // ═══════════════════════════════════════════════
+// Web3 지갑 로그인
+// ═══════════════════════════════════════════════
+async function connectWallet() {
+  const btn = $('walletLoginBtn')
+  if (btn) { btn.disabled = true; btn.textContent = t('wallet_connecting') }
+
+  try {
+    // EIP-1193 provider 감지 (MetaMask, TrustWallet, TokenPocket 등 모두 window.ethereum 사용)
+    let provider = null
+    if (window.ethereum) {
+      provider = window.ethereum
+    } else if (window.web3 && window.web3.currentProvider) {
+      provider = window.web3.currentProvider
+    } else {
+      toast('⚠️ ' + t('wallet_no_provider'), 'text-yellow-400')
+      if (btn) { btn.disabled = false; btn.textContent = t('wallet_login') }
+      return
+    }
+
+    // 지갑 주소 요청
+    const accounts = await provider.request({ method: 'eth_requestAccounts' })
+    if (!accounts || accounts.length === 0) throw new Error('No accounts')
+    const address = accounts[0].toLowerCase()
+
+    if (btn) btn.textContent = t('wallet_sign')
+
+    // 서버에서 nonce 받기
+    const nonceRes = await api('/api/auth/nonce', {
+      method: 'POST',
+      body: JSON.stringify({ address })
+    })
+    if (nonceRes.error) throw new Error(nonceRes.error)
+
+    // 개인 서명 (eth_sign 또는 personal_sign)
+    const signature = await provider.request({
+      method: 'personal_sign',
+      params: [nonceRes.message, address]
+    })
+
+    // 서버에 서명 검증 요청
+    const loginRes = await api('/api/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify({ address, signature })
+    })
+    if (loginRes.error) throw new Error(loginRes.error)
+
+    // 로그인 성공
+    sid = loginRes.sessionId
+    me  = loginRes.user
+    localStorage.setItem('sid', sid)
+    updateUI()
+    showTab('game')
+    toast('🦊 ' + t('wallet_login_ok') + ' ' + address.slice(0,6) + '...' + address.slice(-4), 'text-green-400')
+
+  } catch(e) {
+    console.error('Wallet login error:', e)
+    const msg = e.message === '4001' || e.code === 4001 ? '서명을 취소했습니다' : t('wallet_login_fail')
+    toast('❌ ' + msg, 'text-red-400')
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = t('wallet_login') }
+  }
+}
+
+// ═══════════════════════════════════════════════
+// P2P 배틀룸
+// ═══════════════════════════════════════════════
+let myP2PBet = null
+
+async function loadP2PRoom() {
+  const data = await api('/api/p2p/round/current')
+  if (!data || !data.id) return
+
+  const isBetting = data.phase === 'betting'
+  const pb = $('p2pPhaseBadge')
+  if (pb) {
+    pb.textContent = isBetting ? t('phase_betting') : t('phase_result')
+    pb.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold mb-1 ' +
+      (isBetting ? 'bg-green-500/20 text-green-400 betting-phase' : 'bg-red-500/20 text-red-400')
+  }
+
+  if ($('p2pRoundId'))  $('p2pRoundId').textContent  = '#' + data.id
+  if ($('p2pTimer'))    $('p2pTimer').textContent     = data.timeLeft
+  const bar = $('p2pBar')
+  if (bar) bar.style.width = (isBetting ? (data.timeLeft/60*100) : (data.timeLeft/15*100)) + '%'
+
+  // 풀 현황
+  if ($('p2pOddPool'))  $('p2pOddPool').textContent  = fmtU(data.totalOdd)  + ' USDT'
+  if ($('p2pEvenPool')) $('p2pEvenPool').textContent = fmtU(data.totalEven) + ' USDT'
+  if ($('p2pTotalPool'))$('p2pTotalPool').textContent= fmtU(data.totalPool) + ' USDT'
+  if ($('p2pBetCount')) $('p2pBetCount').textContent = data.betCount + ' ' + t('players')
+
+  // 예상 배당률 (실시간 변동)
+  const oddPay  = data.oddPayout  > 0 ? data.oddPayout.toFixed(2)  + 'x' : '?'
+  const evenPay = data.evenPayout > 0 ? data.evenPayout.toFixed(2) + 'x' : '?'
+  if ($('p2pOddPayout'))  $('p2pOddPayout').textContent  = oddPay
+  if ($('p2pEvenPayout')) $('p2pEvenPayout').textContent = evenPay
+
+  // 결과 표시
+  const resArea = $('p2pResultArea')
+  if (!isBetting && data.result && resArea) {
+    const isOddResult = data.result === 'odd'
+    resArea.classList.remove('hidden')
+    resArea.innerHTML = `
+      <div class="text-center py-4">
+        <div class="text-4xl mb-2">${isOddResult ? '🔴' : '🔵'}</div>
+        <div class="text-2xl font-black ${isOddResult ? 'text-red-400' : 'text-blue-400'}">
+          ${isOddResult ? t('odd') : t('even')}
+        </div>
+        ${myP2PBet ? `<div class="mt-2 text-sm ${myP2PBet.choice === data.result ? 'text-green-400 font-black' : 'text-gray-400'}">
+          ${myP2PBet.choice === data.result ? '🎉 WIN!' : '😔 LOSE'}
+        </div>` : ''}
+      </div>`
+    if (data.id !== (myP2PBet?.roundId)) myP2PBet = null
+  } else if (resArea) {
+    resArea.classList.add('hidden')
+  }
+
+  // 베팅 버튼 활성화
+  const btnOdd  = $('p2pBtnOdd')
+  const btnEven = $('p2pBtnEven')
+  const canBet  = isBetting && !!me && !myP2PBet
+  if (btnOdd)  btnOdd.disabled  = !canBet
+  if (btnEven) btnEven.disabled = !canBet
+
+  // 로그인 유도
+  const needLogin = $('p2pNeedLogin')
+  if (needLogin) needLogin.classList.toggle('hidden', !!me)
+
+  // P2P 히스토리 로드
+  loadP2PHistory()
+}
+
+async function doP2PBet(choice) {
+  if (!me) { showTab('login'); return }
+  const amtEl = $('p2pBetAmt')
+  const amount = parseFloat(amtEl?.value || 0)
+  if (!amount || amount < 10) { toast('⚠️ 최소 10 USDT', 'text-yellow-400'); return }
+  if (amount > me.balance) { toast('⚠️ ' + t('no_balance'), 'text-yellow-400'); return }
+
+  const data = await api('/api/p2p/bet', { method:'POST', body: JSON.stringify({ choice, amount }) })
+  if (data.error) { toast('❌ ' + errMap(data.error), 'text-red-400'); return }
+
+  const { idx } = (() => {
+    const cycle = 75000, elapsed = (Date.now() - 1700000000000) % cycle
+    const idx = Math.floor((Date.now() - 1700000000000) / cycle) + 50000000
+    return { idx }
+  })()
+
+  myP2PBet = { choice, amount, roundId: String(idx) }
+  me.balance = data.balance
+  updateUI()
+  loadP2PRoom()
+  toast(`⚔️ ${choice.toUpperCase()} ${fmtU(amount)} USDT ${t('bet_ok')}`, 'text-green-400')
+  if (amtEl) amtEl.value = ''
+}
+
+async function loadP2PHistory() {
+  const data = await api('/api/p2p/history')
+  const el = $('p2pHistory')
+  if (!el) return
+  if (!data.history || data.history.length === 0) {
+    el.innerHTML = `<div class="text-xs text-gray-500 text-center py-2">${t('no_record')}</div>`
+    return
+  }
+  el.innerHTML = data.history.slice(0,10).map(h => `
+    <div class="flex items-center gap-2 py-1 border-b border-white/5">
+      <span class="text-xs text-gray-500 w-14 shrink-0">#${String(h.id).slice(-4)}</span>
+      <span class="text-xs font-black w-10 text-center ${h.result==='odd'?'text-red-400':'text-blue-400'}">${h.result==='odd'?t('odd'):t('even')}</span>
+      <span class="text-xs text-gray-400">${fmtU(h.total_odd+h.total_even)} USDT</span>
+      <span class="text-xs text-gray-500">${h.bet_count}${t('players')}</span>
+    </div>`).join('')
+}
+
+// ═══════════════════════════════════════════════
 // 초기화
 // ═══════════════════════════════════════════════
 async function init() {
@@ -3214,6 +3465,11 @@ async function init() {
   setInterval(loadFeed,  4000)
   setInterval(loadDashboard, 30000)
   setInterval(loadNotices, 60000)  // 1분마다 공지 갱신
+  setInterval(() => {
+    // P2P 방이 열려 있을 때만 폴링
+    const p2pPanel = $('p-p2p')
+    if (p2pPanel && !p2pPanel.classList.contains('hidden')) loadP2PRoom()
+  }, 1000)
 }
 
 // ═══════════════════════════════════════════════
