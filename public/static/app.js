@@ -647,17 +647,24 @@ const ago = ts => {
   return Math.floor(s/3600) + 'h'
 }
 
-async function api(path, opts={}) {
-  try {
-    const res = await fetch(path, {
-      headers: { 'Content-Type': 'application/json', 'X-Session-Id': sid },
-      ...opts
-    })
-    if (!res.ok && res.status >= 500) return { error: 'SERVER_ERROR' }
-    return await res.json()
-  } catch(e) {
-    return { error: 'NETWORK_ERROR' }
+async function api(path, opts={}, retries=2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(path, {
+        headers: { 'Content-Type': 'application/json', 'X-Session-Id': sid },
+        ...opts
+      })
+      if (res.status >= 500) {
+        if (i < retries) { await new Promise(r => setTimeout(r, 800 * (i+1))); continue }
+        return { error: 'SERVER_ERROR' }
+      }
+      return await res.json()
+    } catch(e) {
+      if (i < retries) { await new Promise(r => setTimeout(r, 800 * (i+1))); continue }
+      return { error: 'NETWORK_ERROR' }
+    }
   }
+  return { error: 'SERVER_ERROR' }
 }
 
 function toast(msg, color='text-white') {
@@ -3420,44 +3427,46 @@ async function init() {
   applyLang()
   parseRef()
 
-  if (sid) {
-    const data = await api('/api/me')
-    if (!data.error) {
-      me = data
-    } else {
-      sid = ''; localStorage.removeItem('sid')
-    }
-  }
-
+  // UI 먼저 표시 (API 응답 기다리지 않음)
   updateUI()
   showTab('game')
 
-  // 게임 설정 로드 (배당률 동적 표시)
-  api('/api/game-settings').then(gs => {
-    if (gs && gs.payout) {
-      currentPayout = parseFloat(gs.payout) || 1.90
-      const r = ROOM_CONFIGS[currentRoom]
-      if (r) currentPayout = r.payout
-      if ($('gPayoutDisplay')) $('gPayoutDisplay').textContent = currentPayout.toFixed(2) + 'x'
-    }
-  })
+  // 세션 복원 (백그라운드)
+  if (sid) {
+    api('/api/me').then(data => {
+      if (!data.error) {
+        me = data
+        updateUI()
+      } else {
+        sid = ''; localStorage.removeItem('sid')
+      }
+    })
+  }
 
-  // 방 선택 화면 표시 (showTab('game')에서 이미 처리)
-  loadFeed()
-  loadDashboard()
-  loadNotices()  // 공지 배너 로드
-  checkNoticePopup()  // 공지 팝업
+  // Worker warm-up: 첫 요청 후 1초 뒤 데이터 로드
+  setTimeout(() => {
+    api('/api/game-settings').then(gs => {
+      if (gs && gs.payout) {
+        currentPayout = parseFloat(gs.payout) || 1.90
+        const r = ROOM_CONFIGS[currentRoom]
+        if (r) currentPayout = r.payout
+        if ($('gPayoutDisplay')) $('gPayoutDisplay').textContent = currentPayout.toFixed(2) + 'x'
+      }
+    })
+    loadFeed()
+    loadDashboard()
+    loadNotices()
+    checkNoticePopup()
+  }, 1000)
 
   setInterval(() => {
-    // 게임 플레이 화면이 보일 때만 라운드 로드
     const gs = $('gamePlayScreen')
     if (gs && !gs.classList.contains('hidden')) loadRound()
   }, 1000)
   setInterval(loadFeed,  4000)
   setInterval(loadDashboard, 30000)
-  setInterval(loadNotices, 60000)  // 1분마다 공지 갱신
+  setInterval(loadNotices, 60000)
   setInterval(() => {
-    // P2P 방이 열려 있을 때만 폴링
     const p2pPanel = $('p-p2p')
     if (p2pPanel && !p2pPanel.classList.contains('hidden')) loadP2PRoom()
   }, 1000)

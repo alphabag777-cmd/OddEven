@@ -11,6 +11,12 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
 app.use('/static/*', serveStatic({ root: './' }))
 
+// 전역 에러 핸들러 - Cold Start / DB 오류 시 500 대신 에러 JSON 반환
+app.onError((err, c) => {
+  console.error('Global error:', err)
+  return c.json({ error: 'SERVER_ERROR', message: err.message }, 500)
+})
+
 // ─────────────────────────────────────────────
 // 상수
 // ─────────────────────────────────────────────
@@ -264,12 +270,17 @@ async function settleRound(db: D1Database, round: any) {
 // ─────────────────────────────────────────────
 app.use('/api/*', async (c, next) => {
   // 모든 방의 라운드를 자동으로 settle
-  for (const room of Object.keys(ROOMS)) {
-    const { phase, idx } = getPhase(room)
-    const round = await ensureRound(c.env.DB, idx, room)
-    if (phase === 'result' && round && !round.settled) {
-      await settleRound(c.env.DB, round)
+  try {
+    for (const room of Object.keys(ROOMS)) {
+      const { phase, idx } = getPhase(room)
+      const round = await ensureRound(c.env.DB, idx, room)
+      if (phase === 'result' && round && !round.settled) {
+        await settleRound(c.env.DB, round)
+      }
     }
+  } catch(e) {
+    // Cold start 시 DB 연결 실패 무시 - 다음 요청에서 재시도
+    console.error('middleware error (cold start?):', e)
   }
   await next()
 })
