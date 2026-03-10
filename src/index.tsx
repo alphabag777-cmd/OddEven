@@ -3702,7 +3702,7 @@ select option{background:#1a1a2e;color:#fff}
   <div id="toastMsg" class="glass rounded-xl px-4 py-3 text-sm font-bold shadow-2xl slide"></div>
 </div>
 
-<script src="/static/app.js?v=20260310003"></script>
+<script src="/static/app.v3.js"></script>
 </body>
 </html>`
 
