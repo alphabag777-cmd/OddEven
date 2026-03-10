@@ -2677,8 +2677,7 @@ button,input,select,textarea{font-family:inherit}
       <button onclick="setLang('ja')" id="lang-ja" class="lang-btn">🇯🇵</button>
     </div>
     <div id="hdrGuest" class="flex gap-1.5 shrink-0">
-      <button onclick="showTab('login')" class="px-3 py-1.5 text-xs border border-white/20 rounded-lg hover:bg-white/10 transition" data-i18n="login">로그인</button>
-      <button onclick="showTab('register')" class="px-3 py-1.5 text-xs bg-blue-600 rounded-lg hover:bg-blue-700 transition" data-i18n="register">회원가입</button>
+      <button onclick="connectWallet()" class="px-3 py-1.5 text-xs bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 rounded-lg font-bold transition flex items-center gap-1">🦊 지갑연결</button>
     </div>
     <div id="hdrUser" class="hidden items-center gap-2 shrink-0">
       <div class="text-right hidden sm:block">
@@ -2690,27 +2689,30 @@ button,input,select,textarea{font-family:inherit}
   </div>
 </header>
 
-<!-- 탭 네비게이션 - 모바일 2단 구조 -->
+<!-- 탭 네비게이션 - 모바일 2단 / PC 1단 -->
 <nav id="mainNav" class="border-b border-white/10 bg-black/30 sticky z-40" style="top:var(--hdr-h,48px)">
-  <!-- 1단: 공통 주요 탭 -->
+  <!-- 1단: 주요 탭 (모바일: 게임/마이페이지/지갑/투명성/더보기, PC: 전체 1줄) -->
   <div class="max-w-6xl mx-auto px-2 flex whitespace-nowrap overflow-x-auto">
     <button onclick="showTab('game')"        id="t-game"        class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_game">🎲 게임</button>
-    <button onclick="showTab('dashboard')"   id="t-dashboard"   class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_dashboard">📊 통계</button>
-    <button onclick="showTab('leaderboard')" id="t-leaderboard" class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0">🏆 랭킹</button>
-    <button onclick="showTab('faq')"         id="t-faq"         class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
-    <button onclick="showTab('mypage')"      id="t-mypage"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_mypage">👤 MY</button>
+    <button onclick="showTab('mypage')"      id="t-mypage"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_mypage">👤 마이페이지</button>
     <button onclick="showTab('wallet')"      id="t-wallet"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_wallet">💰 지갑</button>
-    <button onclick="showTab('referral')"    id="t-referral"    class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천</button>
-    <button onclick="showTab('verify')"      id="t-verify"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
-    <button onclick="showTab('support')"     id="t-support"     class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
+    <button onclick="showTab('dashboard')"   id="t-dashboard"   class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_dashboard">📊 투명성</button>
+    <!-- PC 전용: 2단 메뉴 항목을 1단에 표시 -->
+    <button onclick="showTab('referral')"    id="t-referral"    class="tab-off hidden sm:hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천수당</button>
+    <button onclick="showTab('verify')"      id="t-verify"      class="tab-off hidden sm:hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
+    <button onclick="showTab('leaderboard')" id="t-leaderboard" class="tab-off hidden sm:inline-block px-3 py-2.5 text-xs font-bold transition shrink-0">🏆 랭킹</button>
+    <button onclick="showTab('faq')"         id="t-faq"         class="tab-off hidden sm:inline-block px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
+    <button onclick="showTab('support')"     id="t-support"     class="tab-off hidden sm:hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
     <button onclick="showTab('admin')"       id="t-admin"       class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0 text-yellow-400">⚙️ 관리자</button>
+    <!-- 모바일 전용: 더보기 토글 -->
+    <button onclick="toggleMobileSubNav()" id="t-more" class="sm:hidden tab-off px-3 py-2.5 text-xs font-bold transition shrink-0">더보기 ▼</button>
   </div>
-  <!-- 2단: 모바일 전용 (sm 미만) -->
-  <div id="mobileSubNav" class="sm:hidden border-t border-white/5 bg-black/20 px-2 flex whitespace-nowrap overflow-x-auto">
-    <button onclick="showTab('mypage')"      id="t-mypage-m"    class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_mypage">👤 MY</button>
-    <button onclick="showTab('wallet')"      id="t-wallet-m"    class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_wallet">💰 지갑</button>
-    <button onclick="showTab('referral')"    id="t-referral-m"  class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천</button>
+  <!-- 2단: 모바일 전용 (sm 미만) - 더보기 클릭 시 토글 -->
+  <div id="mobileSubNav" class="sm:hidden border-t border-white/5 bg-black/20 px-2 flex whitespace-nowrap overflow-x-auto" style="display:none">
+    <button onclick="showTab('referral')"    id="t-referral-m"  class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천수당</button>
     <button onclick="showTab('verify')"      id="t-verify-m"    class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
+    <button onclick="showTab('leaderboard')" id="t-leaderboard-m" class="tab-off px-3 py-2 text-xs font-bold transition shrink-0">🏆 랭킹</button>
+    <button onclick="showTab('faq')"         id="t-faq-m"       class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
     <button onclick="showTab('support')"     id="t-support-m"   class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
   </div>
 </nav>
@@ -2726,7 +2728,7 @@ button,input,select,textarea{font-family:inherit}
       <h2 class="text-2xl font-black mb-1">🎮 <span data-i18n="room_select_title">방 선택</span></h2>
       <p class="text-gray-400 text-sm" data-i18n="room_select_desc">참여할 게임 방을 선택하세요</p>
     </div>
-    <div class="grid grid-cols-2 lg:grid-cols-1 gap-3 max-w-2xl mx-auto" id="roomList">
+    <div class="grid grid-cols-1 gap-3 max-w-2xl mx-auto" id="roomList">
 
       <!-- 터보 방 -->
       <div onclick="selectRoom('turbo')" class="room-card glass rounded-2xl p-4 cursor-pointer hover:scale-[1.02] transition-all border border-yellow-500/30 hover:border-yellow-400/60 hover:bg-yellow-500/5">

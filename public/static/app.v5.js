@@ -3264,6 +3264,17 @@ async function connectWallet() {
     } else if (window.web3 && window.web3.currentProvider) {
       provider = window.web3.currentProvider
     } else {
+      // 모바일: 지갑 앱이 없으면 deep link로 연결 시도
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+      if (isMobile) {
+        const dappUrl = encodeURIComponent(window.location.href)
+        const metamaskDeepLink = 'https://metamask.app.link/dapp/' + window.location.host + window.location.pathname
+        toast('🦊 지갑 앱으로 이동합니다...', 'text-yellow-400')
+        setTimeout(() => { window.location.href = metamaskDeepLink }, 500)
+        if (btn) { btn.disabled = false; btn.textContent = t('wallet_login') }
+        return
+      }
+      // PC: 지갑 확장 설치 안내
       toast('⚠️ ' + t('wallet_no_provider'), 'text-yellow-400')
       if (btn) { btn.disabled = false; btn.textContent = t('wallet_login') }
       return
@@ -3820,4 +3831,20 @@ async function markAllMessagesRead() {
   await api('/api/my-messages/read', { method:'POST', body: JSON.stringify({}) })
   loadMyMessages()
   toast('✅ 모두 읽음 처리', 'text-blue-400')
+}
+
+// ═══════════════════════════════════════════════
+// 모바일 2단 메뉴 토글
+// ═══════════════════════════════════════════════
+function toggleMobileSubNav() {
+  const sub = $('mobileSubNav')
+  const btn = $('t-more')
+  if (!sub) return
+  if (sub.style.display === 'none' || !sub.style.display) {
+    sub.style.display = 'flex'
+    if (btn) btn.textContent = '더보기 ▲'
+  } else {
+    sub.style.display = 'none'
+    if (btn) btn.textContent = '더보기 ▼'
+  }
 }
