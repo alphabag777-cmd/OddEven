@@ -2124,13 +2124,22 @@ app.get('/api/admin/logs', async (c) => {
 // ─────────────────────────────────────────────
 // 정적/기본 라우트
 // ─────────────────────────────────────────────
-app.get('*', (c) => c.html(HTML))
+app.get('*', (c) => {
+  const res = c.html(HTML)
+  // No-cache so browsers always get fresh HTML
+  res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+  res.headers.set('Pragma', 'no-cache')
+  return res
+})
 
 const HTML = `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>🎲 ODD/EVEN - Blockchain Fair Game</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -3713,7 +3722,7 @@ select option{background:#1a1a2e;color:#fff}
   <div id="toastMsg" class="glass rounded-xl px-4 py-3 text-sm font-bold shadow-2xl slide"></div>
 </div>
 
-<script src="/static/app.v3.js"></script>
+<script src="/static/app.v4.js"></script>
 </body>
 </html>`
 
