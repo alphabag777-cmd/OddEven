@@ -2988,21 +2988,21 @@ select option{background:#1a1a2e;color:#fff}
 <!-- ══ 리더보드 탭 ══ -->
 <div id="p-leaderboard" class="hidden">
   <div class="mb-4">
-    <h2 class="text-xl font-black mb-1">🏆 랭킹 리더보드</h2>
-    <p class="text-gray-400 text-sm">누적 베팅 TOP10 및 순이익 TOP10</p>
+    <h2 class="text-xl font-black mb-1">🏆 <span data-i18n="lb_title">랭킹 리더보드</span></h2>
+    <p class="text-gray-400 text-sm" data-i18n="lb_desc">누적 베팅 TOP10 및 순이익 TOP10</p>
   </div>
   <!-- 탭 선택 -->
   <div class="flex gap-2 mb-4">
-    <button onclick="loadLeaderboard('total_bet')" id="lb-tab-bet" class="lb-tab active px-4 py-2 rounded-lg text-sm font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 transition">💰 베팅액 순위</button>
-    <button onclick="loadLeaderboard('roi')"       id="lb-tab-roi" class="lb-tab px-4 py-2 rounded-lg text-sm font-bold bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20 transition">📈 순이익 순위</button>
+    <button onclick="loadLeaderboard('total_bet')" id="lb-tab-bet" class="lb-tab active px-4 py-2 rounded-lg text-sm font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 transition" data-i18n="lb_bet_rank">💰 베팅액 순위</button>
+    <button onclick="loadLeaderboard('roi')"       id="lb-tab-roi" class="lb-tab px-4 py-2 rounded-lg text-sm font-bold bg-white/10 text-gray-300 border border-white/20 hover:bg-white/20 transition" data-i18n="lb_roi_rank">📈 순이익 순위</button>
   </div>
   <!-- TOP10 테이블 -->
   <div class="glass rounded-xl p-4">
     <div id="leaderboardContent">
-      <div class="text-gray-500 text-center py-8">🏆 랭킹을 불러오는 중...</div>
+      <div class="text-gray-500 text-center py-8">🏆 <span data-i18n="lb_loading">랭킹을 불러오는 중...</span></div>
     </div>
   </div>
-  <div class="text-xs text-gray-500 text-center mt-3">* 아이디는 부분 마스킹 표시됩니다 · 최소 베팅 10 USDT 이상 유저만 순이익 랭킹에 표시</div>
+  <div class="text-xs text-gray-500 text-center mt-3" data-i18n="lb_notice">* 아이디는 부분 마스킹 표시됩니다 · 최소 베팅 10 USDT 이상 유저만 순이익 랭킹에 표시</div>
 </div>
 
 <!-- ══ FAQ 탭 ══ -->

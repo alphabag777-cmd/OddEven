@@ -95,6 +95,41 @@ const I18N = {
     err_title_too_long:'제목이 너무 깁니다 (최대 100자)',
     err_content_too_long:'내용이 너무 깁니다 (최대 2000자)',
     partner_code_label:'파트너코드',partner_desc:'파트너 링크로 가입 시 자동 적용됩니다',
+    // 누락 키 추가
+    after_login_bet:' 후 베팅 가능',bet_amount:'베팅액',block_height:'블록 높이',
+    bonus_msg:'🎁 가입 즉시 10 USDT 보너스!',change_pw_btn:'비밀번호 변경',clear:'초기화',
+    dash_desc:'모든 데이터 실시간 공개 — 숨기는 것 없음',deposit_btn:'입금',
+    deposit_title:'📥 USDT 입금',deposit_withdraw:'💰 입금 / 출금',
+    even:'짝 (EVEN)',even_bet:'짝 베팅',
+    faq_cat_deposit:'입금',faq_cat_partner:'파트너',faq_cat_referral:'추천',faq_cat_withdraw:'출금',
+    faq_no_answer:'원하는 답변이 없으신가요?',game_history:'📜 게임 기록',hash:'해시',
+    have_account:'이미 계정?',house_net:'운영 수수료',
+    inquiry_category:'카테고리',inquiry_content:'내용',inquiry_detail:'📄 문의 상세',inquiry_submit:'문의 제출',
+    l1_count:'1단계',l1_desc:'직접 초대 친구 베팅금의 2.5% 자동 지급',l1_reward:'1단계 추천수당',l1_title:'1단계 수당',
+    l2_count:'2단계',l2_desc:'친구가 초대한 친구 베팅금의 1.0% 자동 지급',l2_reward:'2단계 추천수당',l2_title:'2단계 수당',
+    last_char:'마지막자리',last_char_rule:'마지막자리 홀수→ODD / 짝수→EVEN',
+    level1:'1단계',level2:'2단계',login:'로그인',logout:'로그아웃',
+    monthly_earn:'월 수익',my_bet_history:'📋 내 베팅 내역',need_login:'로그인이 필요합니다',
+    no_bets:'베팅 내역 없음',no_limit:'수당 상한 없음',no_limit_desc:'인원·베팅액 비례 무한 수익',
+    no_record:'기록 없음',odd_rate:'홀 당첨률',password:'비밀번호',payout:'배당',players:'명',
+    recent_verify:'📋 최근 라운드 검증',ref_desc:'친구 초대 → 베팅 때마다 자동 USDT 수당',
+    ref_earnings:'추천수당',ref_link:'추천링크',register:'회원가입',register_btn:'🎁 회원가입',
+    result:'결과',sec_left:'초 남음',sec_unit:'초',seed_desc:'베팅 전에 봉인 — 수학적으로 조작 불가',
+    server_seed:'서버시드',sim_l1:'1단계 수',sim_l2:'2단계 수',sim_times:'일 참여 횟수',
+    tab_mypage:'👤 마이페이지',tab_referral:'👥 추천수당',tab_support:'💬 문의',
+    tab_verify:'🔍 검증',tab_wallet:'💰 지갑',test_accounts:'테스트 계정',
+    theory_rtp:'이론 RTP',time:'시간',total_bet:'총 베팅',total_deposit:'총 입금',
+    total_games:'총 게임',total_payout:'총 지급',total_pool:'총 풀',
+    total_users:'유저수',total_withdraw:'총 출금',user_rtp:'유저 실제 RTP',
+    v1_desc:'라운드 전 SHA256 해시 공개. 종료 후 원본 공개→변조 불가 증명.',v1_title:'① 서버 시드',
+    v2_desc:'참여자 ID 합산. 본사가 사전에 알 수 없어 조작 원천 차단.',v2_title:'② 유저 시드',
+    v3_desc:'비트코인 블록높이 추가 난수 소스. 외부 검증 가능.',v3_title:'③ 블록 높이',
+    verify_btn:'🔍 검증하기',verify_desc:'결과가 조작되지 않았음을 수학적으로 확인',
+    wallet_desc:'TRC20 (TRON) 네트워크 기반 USDT 입출금',win_rate:'승률',
+    withdraw_btn:'출금 신청',yearly_earn:'연 수익',
+    lb_rank:'순위',lb_loading:'랭킹 로딩 중...',lb_bet_rank:'💰 베팅액 순위',lb_roi_rank:'📈 순이익 순위',
+    lb_title:'랭킹 리더보드',lb_desc:'누적 베팅 TOP10 및 순이익 TOP10',
+    lb_notice:'* 아이디는 부분 마스킹 표시됩니다 · 최소 베팅 10 USDT 이상 유저만 순이익 랭킹에 표시',
   },
   en: {
     blockchain_fair:'Blockchain Fair',login:'Login',register:'Register',logout:'Logout',
@@ -189,6 +224,41 @@ const I18N = {
     err_title_too_long:'Title too long (max 100 chars)',
     err_content_too_long:'Content too long (max 2000 chars)',
     partner_code_label:'Partner Code',partner_desc:'Automatically applied when registering via partner link',
+    // missing keys
+    after_login_bet:' to place bet',bet_amount:'Bet',block_height:'Block Height',
+    bonus_msg:'🎁 Get 10 USDT bonus on signup!',change_pw_btn:'Change Password',clear:'Clear',
+    dash_desc:'All data public in real-time — nothing hidden',deposit_btn:'Deposit',
+    deposit_title:'📥 Deposit USDT',deposit_withdraw:'💰 Deposit / Withdraw',
+    even:'EVEN',even_bet:'BET EVEN',
+    faq_cat_deposit:'Deposit',faq_cat_partner:'Partner',faq_cat_referral:'Referral',faq_cat_withdraw:'Withdraw',
+    faq_no_answer:'Can\'t find an answer?',game_history:'📜 Game History',hash:'Hash',
+    have_account:'Have account?',house_net:'Operating Fee',
+    inquiry_category:'Category',inquiry_content:'Content',inquiry_detail:'📄 Inquiry Detail',inquiry_submit:'Submit',
+    l1_count:'Level 1',l1_desc:'2.5% of direct referral bets paid automatically',l1_reward:'Level 1 Referral',l1_title:'Level 1 Reward',
+    l2_count:'Level 2',l2_desc:'1.0% of 2nd level referral bets paid automatically',l2_reward:'Level 2 Referral',l2_title:'Level 2 Reward',
+    last_char:'Last Char',last_char_rule:'Last digit odd→ODD / even→EVEN',
+    level1:'Level 1',level2:'Level 2',login:'Login',logout:'Logout',
+    monthly_earn:'Monthly',my_bet_history:'📋 My Bet History',need_login:'Please login',
+    no_bets:'No bets yet',no_limit:'No Cap',no_limit_desc:'Earn proportional to members & bets',
+    no_record:'No records',odd_rate:'ODD Win Rate',password:'Password',payout:'Payout',players:'players',
+    recent_verify:'📋 Recent Rounds',ref_desc:'Invite friends → Earn USDT every bet',
+    ref_earnings:'Ref Earnings',ref_link:'Ref Link',register:'Register',register_btn:'🎁 Register',
+    result:'Result',sec_left:'sec left',sec_unit:'s',seed_desc:'Sealed before bet — mathematically tamper-proof',
+    server_seed:'Server Seed',sim_l1:'Level 1 Count',sim_l2:'Level 2 Count',sim_times:'Daily rounds',
+    tab_mypage:'👤 My Page',tab_referral:'👥 Referral',tab_support:'💬 Support',
+    tab_verify:'🔍 Verify',tab_wallet:'💰 Wallet',test_accounts:'Test Accounts',
+    theory_rtp:'Theoretical RTP',time:'Time',total_bet:'Total Bet',total_deposit:'Total Deposit',
+    total_games:'Total Games',total_payout:'Total Payout',total_pool:'Total Pool',
+    total_users:'Users',total_withdraw:'Total Withdraw',user_rtp:'Actual RTP',
+    v1_desc:'SHA256 hash disclosed before round. Original revealed after — tamper-proof.',v1_title:'① Server Seed',
+    v2_desc:'Aggregated participant IDs. House cannot know in advance.',v2_title:'② User Seeds',
+    v3_desc:'Bitcoin block height as extra entropy. Externally verifiable.',v3_title:'③ Block Height',
+    verify_btn:'🔍 Verify',verify_desc:'Mathematically verify results were not manipulated',
+    wallet_desc:'TRC20 (TRON) network USDT deposit & withdrawal',win_rate:'Win Rate',
+    withdraw_btn:'Request Withdraw',yearly_earn:'Yearly',
+    lb_rank:'Rank',lb_loading:'Loading rankings...',lb_bet_rank:'💰 Top Bettors',lb_roi_rank:'📈 Top Profit',
+    lb_title:'Leaderboard',lb_desc:'Top 10 Bettors & Top 10 Profit',
+    lb_notice:'* Usernames are partially masked · Min 10 USDT wagered for profit ranking',
   },
   zh: {
     blockchain_fair:'区块链公平',login:'登录',register:'注册',logout:'退出',
@@ -283,6 +353,41 @@ const I18N = {
     err_title_too_long:'标题过长（最多100字）',
     err_content_too_long:'内容过长（最多2000字）',
     partner_code_label:'合作码',partner_desc:'通过合作链接注册时自动应用',
+    // missing keys
+    after_login_bet:' 后可投注',bet_amount:'投注额',block_height:'区块高度',
+    bonus_msg:'🎁 注册即获 10 USDT 奖励!',change_pw_btn:'修改密码',clear:'重置',
+    dash_desc:'所有数据实时公开 — 无隐藏',deposit_btn:'存款',
+    deposit_title:'📥 USDT 存款',deposit_withdraw:'💰 存款 / 提款',
+    even:'双(EVEN)',even_bet:'双 投注',
+    faq_cat_deposit:'充值',faq_cat_partner:'合作',faq_cat_referral:'推荐',faq_cat_withdraw:'提现',
+    faq_no_answer:'没有找到答案?',game_history:'📜 游戏记录',hash:'哈希',
+    have_account:'已有账户?',house_net:'运营费用',
+    inquiry_category:'类别',inquiry_content:'内容',inquiry_detail:'📄 咨询详情',inquiry_submit:'提交',
+    l1_count:'一级',l1_desc:'直接推荐朋友投注额的2.5%自动发放',l1_reward:'一级推荐奖',l1_title:'一级奖励',
+    l2_count:'二级',l2_desc:'朋友推荐朋友投注额的1.0%自动发放',l2_reward:'二级推荐奖',l2_title:'二级奖励',
+    last_char:'最后一位',last_char_rule:'最后一位奇数→ODD / 偶数→EVEN',
+    level1:'一级',level2:'二级',login:'登录',logout:'退出',
+    monthly_earn:'月收益',my_bet_history:'📋 我的投注记录',need_login:'请先登录',
+    no_bets:'暂无投注',no_limit:'无上限',no_limit_desc:'按人数和投注额成比例无限收益',
+    no_record:'暂无记录',odd_rate:'单赢率',password:'密码',payout:'赔率',players:'人',
+    recent_verify:'📋 最近轮次验证',ref_desc:'邀请朋友 → 每次投注自动获得 USDT',
+    ref_earnings:'推荐收益',ref_link:'推荐链接',register:'注册',register_btn:'🎁 注册',
+    result:'结果',sec_left:'秒剩余',sec_unit:'秒',seed_desc:'投注前封印 — 数学上防篡改',
+    server_seed:'服务器种子',sim_l1:'一级人数',sim_l2:'二级人数',sim_times:'日参与次数',
+    tab_mypage:'👤 我的',tab_referral:'👥 推荐',tab_support:'💬 客服',
+    tab_verify:'🔍 验证',tab_wallet:'💰 钱包',test_accounts:'测试账户',
+    theory_rtp:'理论RTP',time:'时间',total_bet:'总投注',total_deposit:'总存款',
+    total_games:'总游戏',total_payout:'总赔付',total_pool:'总池',
+    total_users:'用户数',total_withdraw:'总提款',user_rtp:'实际RTP',
+    v1_desc:'局前公布SHA256哈希。结束后公开原始数据→不可篡改证明。',v1_title:'① 服务器种子',
+    v2_desc:'参与者ID汇总。本部无法事先知晓，从源头防止操纵。',v2_title:'② 用户种子',
+    v3_desc:'比特币区块高度作为额外随机源。可外部验证。',v3_title:'③ 区块高度',
+    verify_btn:'🔍 验证',verify_desc:'数学验证结果未被篡改',
+    wallet_desc:'TRC20 (TRON) 网络 USDT 存款和提款',win_rate:'胜率',
+    withdraw_btn:'申请提款',yearly_earn:'年收益',
+    lb_rank:'排名',lb_loading:'加载排行榜...',lb_bet_rank:'💰 投注排行',lb_roi_rank:'📈 盈利排行',
+    lb_title:'排行榜',lb_desc:'累计投注TOP10 及 净盈利TOP10',
+    lb_notice:'* 用户名部分隐藏 · 最低投注10 USDT以上用户参与盈利排名',
   },
   ja: {
     blockchain_fair:'ブロックチェーン公正',login:'ログイン',register:'登録',logout:'ログアウト',
@@ -377,6 +482,41 @@ const I18N = {
     err_title_too_long:'タイトルが長すぎます（最大100文字）',
     err_content_too_long:'内容が長すぎます（最大2000文字）',
     partner_code_label:'パートナーコード',partner_desc:'パートナーリンクで登録時に自動適用されます',
+    // missing keys
+    after_login_bet:' してベット',bet_amount:'ベット額',block_height:'ブロック高',
+    bonus_msg:'🎁 登録で10 USDTボーナス!',change_pw_btn:'パスワード変更',clear:'リセット',
+    dash_desc:'全データリアルタイム公開 — 隠し事なし',deposit_btn:'入金',
+    deposit_title:'📥 USDT 入金',deposit_withdraw:'💰 入金 / 出金',
+    even:'偶数(EVEN)',even_bet:'偶数 ベット',
+    faq_cat_deposit:'入金',faq_cat_partner:'パートナー',faq_cat_referral:'紹介',faq_cat_withdraw:'出金',
+    faq_no_answer:'お探しの回答が見つかりませんか?',game_history:'📜 ゲーム記録',hash:'ハッシュ',
+    have_account:'アカウントあり?',house_net:'運営手数料',
+    inquiry_category:'カテゴリ',inquiry_content:'内容',inquiry_detail:'📄 お問い合わせ詳細',inquiry_submit:'送信',
+    l1_count:'1段階',l1_desc:'直接招待した友達のベット額の2.5%自動支払',l1_reward:'1段階紹介報酬',l1_title:'1段階報酬',
+    l2_count:'2段階',l2_desc:'友達の友達のベット額の1.0%自動支払',l2_reward:'2段階紹介報酬',l2_title:'2段階報酬',
+    last_char:'最後の桁',last_char_rule:'最後の桁が奇数→ODD / 偶数→EVEN',
+    level1:'1段階',level2:'2段階',login:'ログイン',logout:'ログアウト',
+    monthly_earn:'月収益',my_bet_history:'📋 ベット履歴',need_login:'ログインが必要です',
+    no_bets:'ベット履歴なし',no_limit:'上限なし',no_limit_desc:'人数・ベット額比例で無限収益',
+    no_record:'記録なし',odd_rate:'奇数勝率',password:'パスワード',payout:'配当',players:'人',
+    recent_verify:'📋 最近のラウンド検証',ref_desc:'友達招待 → ベットのたびに自動 USDT 報酬',
+    ref_earnings:'紹介報酬',ref_link:'紹介リンク',register:'登録',register_btn:'🎁 登録',
+    result:'結果',sec_left:'秒残り',sec_unit:'秒',seed_desc:'ベット前に封印 — 数学的に改ざん不可',
+    server_seed:'サーバーシード',sim_l1:'1段階数',sim_l2:'2段階数',sim_times:'日参加回数',
+    tab_mypage:'👤 マイページ',tab_referral:'👥 紹介報酬',tab_support:'💬 お問い合わせ',
+    tab_verify:'🔍 検証',tab_wallet:'💰 ウォレット',test_accounts:'テストアカウント',
+    theory_rtp:'理論RTP',time:'時刻',total_bet:'総ベット',total_deposit:'総入金',
+    total_games:'総ゲーム',total_payout:'総支払',total_pool:'総プール',
+    total_users:'ユーザー数',total_withdraw:'総出金',user_rtp:'実際RTP',
+    v1_desc:'ラウンド前にSHA256ハッシュ公開。終了後原本公開→改ざん不可証明。',v1_title:'① サーバーシード',
+    v2_desc:'参加者ID集計。本部が事前に知ることができず操作を根本的に防止。',v2_title:'② ユーザーシード',
+    v3_desc:'ビットコインブロック高を追加乱数ソースとして使用。外部検証可能。',v3_title:'③ ブロック高',
+    verify_btn:'🔍 検証する',verify_desc:'結果が操作されていないことを数学的に確認',
+    wallet_desc:'TRC20 (TRON) ネットワーク USDT 入出金',win_rate:'勝率',
+    withdraw_btn:'出金申請',yearly_earn:'年収益',
+    lb_rank:'順位',lb_loading:'ランキング読込中...',lb_bet_rank:'💰 ベット額順位',lb_roi_rank:'📈 純損益順位',
+    lb_title:'ランキング リーダーボード',lb_desc:'累計ベットTOP10 & 純損益TOP10',
+    lb_notice:'* ユーザー名は部分マスク表示 · 最低10 USDT以上ベットしたユーザーのみ純損益ランキングに表示',
   }
 }
 
@@ -2966,12 +3106,12 @@ async function loadLeaderboard(type) {
     activeTab.classList.remove('bg-white/10','text-gray-300','border-white/20')
   }
 
-  el.innerHTML = '<div class="text-gray-500 text-center py-8">🏆 랭킹 로딩 중...</div>'
+  el.innerHTML = '<div class="text-gray-500 text-center py-8">🏆 ' + t('lb_loading') + '</div>'
   const data = await api('/api/leaderboard?type=all')
   const list = currentLbType === 'total_bet' ? data.topBet : data.topRoi
 
   if (!list || list.length === 0) {
-    el.innerHTML = '<div class="text-gray-500 text-center py-8">데이터 없음</div>'; return
+    el.innerHTML = '<div class="text-gray-500 text-center py-8">' + t('no_record') + '</div>'; return
   }
 
   const rankIcon = ['🥇','🥈','🥉']
@@ -2981,19 +3121,19 @@ async function loadLeaderboard(type) {
     el.innerHTML = `
       <table class="w-full text-sm">
         <thead><tr class="text-gray-400 border-b border-white/10 text-left">
-          <th class="py-2 px-3">순위</th>
-          <th class="py-2 px-3">아이디</th>
-          <th class="py-2 px-3 text-right">총 베팅액</th>
-          <th class="py-2 px-3 text-right">승률</th>
-          <th class="py-2 px-3 text-right">게임 수</th>
+          <th class="py-2 px-3">${t('lb_rank')}</th>
+          <th class="py-2 px-3">${t('username')}</th>
+          <th class="py-2 px-3 text-right">${t('total_bet_amount')}</th>
+          <th class="py-2 px-3 text-right">${t('win_rate')}</th>
+          <th class="py-2 px-3 text-right">${t('total_games')}</th>
         </tr></thead>
         <tbody>${list.map((u,i) => `
           <tr class="border-b border-white/5 hover:bg-white/5 transition ${i < 3 ? 'font-bold' : ''}">
             <td class="py-3 px-3"><span class="${rankColors[i] || 'text-gray-400'} text-lg">${rankIcon[i] || (i+1)}</span></td>
             <td class="py-3 px-3 text-white">${u.username}</td>
             <td class="py-3 px-3 text-right text-yellow-300 font-black">${fmtU(u.totalBet)} USDT</td>
-            <td class="py-3 px-3 text-right ${parseFloat(u.winRate) >= 50 ? 'text-green-400' : 'text-red-400'}">${u.winRate}%</td>
-            <td class="py-3 px-3 text-right text-gray-400">${u.totalGames}</td>
+            <td class="py-3 px-3 text-right ${parseFloat(u.winRate||'0') >= 50 ? 'text-green-400' : 'text-red-400'}">${u.winRate||'0'}%</td>
+            <td class="py-3 px-3 text-right text-gray-400">${u.totalGames||0}</td>
           </tr>`).join('')}
         </tbody>
       </table>`
@@ -3001,19 +3141,19 @@ async function loadLeaderboard(type) {
     el.innerHTML = `
       <table class="w-full text-sm">
         <thead><tr class="text-gray-400 border-b border-white/10 text-left">
-          <th class="py-2 px-3">순위</th>
-          <th class="py-2 px-3">아이디</th>
-          <th class="py-2 px-3 text-right">순이익</th>
-          <th class="py-2 px-3 text-right">총 베팅</th>
+          <th class="py-2 px-3">${t('lb_rank')}</th>
+          <th class="py-2 px-3">${t('username')}</th>
+          <th class="py-2 px-3 text-right">${t('net_profit')}</th>
+          <th class="py-2 px-3 text-right">${t('total_bet')}</th>
           <th class="py-2 px-3 text-right">ROI</th>
         </tr></thead>
         <tbody>${list.map((u,i) => `
           <tr class="border-b border-white/5 hover:bg-white/5 transition ${i < 3 ? 'font-bold' : ''}">
             <td class="py-3 px-3"><span class="${rankColors[i] || 'text-gray-400'} text-lg">${rankIcon[i] || (i+1)}</span></td>
             <td class="py-3 px-3 text-white">${u.username}</td>
-            <td class="py-3 px-3 text-right ${u.netProfit >= 0 ? 'text-green-400' : 'text-red-400'} font-black">${u.netProfit >= 0 ? '+' : ''}${fmtU(u.netProfit)} USDT</td>
-            <td class="py-3 px-3 text-right text-gray-400">${fmtU(u.totalBet)}</td>
-            <td class="py-3 px-3 text-right ${parseFloat(u.roi) >= 0 ? 'text-green-400' : 'text-red-400'}">${u.roi}%</td>
+            <td class="py-3 px-3 text-right ${(u.netProfit||0) >= 0 ? 'text-green-400' : 'text-red-400'} font-black">${(u.netProfit||0) >= 0 ? '+' : ''}${fmtU(u.netProfit||0)} USDT</td>
+            <td class="py-3 px-3 text-right text-gray-400">${fmtU(u.totalBet||0)}</td>
+            <td class="py-3 px-3 text-right ${parseFloat(u.roi||'0') >= 0 ? 'text-green-400' : 'text-red-400'}">${u.roi||'0'}%</td>
           </tr>`).join('')}
         </tbody>
       </table>`
