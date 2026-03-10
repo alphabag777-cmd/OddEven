@@ -709,21 +709,12 @@ function showTab(name) {
     if (b2) { b2.classList.toggle('tab-on', tab === name); b2.classList.toggle('tab-off', tab !== name) }
   })
 
-  // 탭 내용으로 스크롤 (sticky 헤더+네비 아래로 정확히 스크롤)
-  const panel = $('p-' + name)
-  if (panel) {
-    setTimeout(() => {
-      const hdr = $('mainHeader')
-      const nav = $('mainNav')
-      const offset = (hdr ? hdr.offsetHeight : 48) + (nav ? nav.offsetHeight : 38) + 8
-      const top = panel.getBoundingClientRect().top + window.scrollY - offset
-      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-    }, 50)
-  }
+  // 탭 전환 시 페이지 맨 위로 스크롤 (가장 확실한 방법)
+  window.scrollTo({ top: 0, behavior: 'instant' })
 
   // 각 탭 데이터 로드
   try {
-    if (name === 'dashboard')   loadDashboard()
+    if (name === 'dashboard')        loadDashboard()
     else if (name === 'referral')    loadReferral()
     else if (name === 'verify')      loadVerifyHist()
     else if (name === 'wallet')      loadWallet()
