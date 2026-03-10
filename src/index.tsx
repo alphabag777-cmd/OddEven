@@ -22,10 +22,27 @@ const MIN_WITHDRAW_AMT = 1
 const WITHDRAW_FEE     = 1        // TRC20 네트워크 수수료
 const MIN_BET          = 0.1
 const MAX_BET          = 1000
-const ROUND_DURATION   = 30000   // ms
+const ROUND_DURATION   = 30000   // ms (기본 30초)
 const RESULT_SHOW      = 8000    // ms
 const CYCLE            = ROUND_DURATION + RESULT_SHOW
 const GAME_START       = 1700000000000  // 고정 기준시간 (서버 재시작 무관)
+
+// ─────────────────────────────────────────────
+// 방(Room) 설정
+// ─────────────────────────────────────────────
+const ROOMS: Record<string, {
+  name: string, emoji: string, color: string,
+  roundDuration: number, resultShow: number,
+  minBet: number, maxBet: number,
+  feeRate: number, payout: number,
+  idOffset: number  // 라운드 ID 충돌 방지용 오프셋
+}> = {
+  turbo:    { name:'Turbo',    emoji:'⚡', color:'yellow', roundDuration:15000, resultShow:5000, minBet:1,    maxBet:100,   feeRate:0.07, payout:1.86, idOffset:0        },
+  standard: { name:'Standard', emoji:'🎯', color:'blue',   roundDuration:30000, resultShow:8000, minBet:101,  maxBet:500,   feeRate:0.05, payout:1.90, idOffset:10000000 },
+  high:     { name:'High',     emoji:'💎', color:'purple', roundDuration:30000, resultShow:8000, minBet:501,  maxBet:2000,  feeRate:0.04, payout:1.92, idOffset:20000000 },
+  vip:      { name:'VIP',      emoji:'👑', color:'orange', roundDuration:30000, resultShow:8000, minBet:2001, maxBet:5000,  feeRate:0.03, payout:1.94, idOffset:30000000 },
+  master:   { name:'Master',   emoji:'🏆', color:'red',    roundDuration:30000, resultShow:8000, minBet:5001, maxBet:10000, feeRate:0.02, payout:1.96, idOffset:40000000 },
+}
 const SESSION_TTL      = 7 * 24 * 60 * 60 * 1000  // 7일 (ms)
 const LOGIN_MAX_FAIL   = 5       // 최대 로그인 실패 횟수
 const LOGIN_LOCK_MS    = 15 * 60 * 1000  // 잠금 시간 15분
@@ -85,14 +102,16 @@ const isOdd   = (h: string) => parseInt(h[h.length-1], 16) % 2 === 1
 const r2      = (n: number) => Math.round(n * 100) / 100
 
 // ─────────────────────────────────────────────
-// 라운드 페이즈 계산
+// 라운드 페이즈 계산 (방별)
 // ─────────────────────────────────────────────
-function getPhase() {
-  const elapsed = (Date.now() - GAME_START) % CYCLE
-  const idx     = Math.floor((Date.now() - GAME_START) / CYCLE)
-  if (elapsed < ROUND_DURATION)
-    return { phase: 'betting' as const, timeLeft: Math.ceil((ROUND_DURATION - elapsed)/1000), idx }
-  return   { phase: 'result'  as const, timeLeft: Math.ceil((CYCLE - elapsed)/1000), idx }
+function getPhase(room: string = 'standard') {
+  const r = ROOMS[room] || ROOMS.standard
+  const cycle   = r.roundDuration + r.resultShow
+  const elapsed = (Date.now() - GAME_START) % cycle
+  const idx     = Math.floor((Date.now() - GAME_START) / cycle)
+  if (elapsed < r.roundDuration)
+    return { phase: 'betting' as const, timeLeft: Math.ceil((r.roundDuration - elapsed)/1000), idx }
+  return   { phase: 'result'  as const, timeLeft: Math.ceil((cycle - elapsed)/1000), idx }
 }
 
 // ─────────────────────────────────────────────
@@ -131,15 +150,17 @@ async function cleanupSessions(db: D1Database) {
   await db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(Date.now()).run()
 }
 
-async function ensureRound(db: D1Database, idx: number) {
-  const roundId = idx + 1
+async function ensureRound(db: D1Database, idx: number, room: string = 'standard') {
+  const r = ROOMS[room] || ROOMS.standard
+  const roundId = r.idOffset + idx + 1
   const existing = await db.prepare('SELECT * FROM rounds WHERE id=?').bind(roundId).first<any>()
   if (existing) return existing
 
   const serverSeed     = uid() + uid()
   const serverSeedHash = await sha256(serverSeed)
-  const startTime      = GAME_START + idx * CYCLE
-  const endTime        = startTime + ROUND_DURATION
+  const cycle          = r.roundDuration + r.resultShow
+  const startTime      = GAME_START + idx * cycle
+  const endTime        = startTime + r.roundDuration
   const blockHeight    = 881000 + roundId
 
   await db.prepare(`
@@ -157,8 +178,12 @@ async function settleRound(db: D1Database, round: any) {
   const betsResult = await db.prepare('SELECT * FROM bets WHERE round_id=? AND settled=0').bind(round.id).all<any>()
   const bets = betsResult.results || []
 
-  // DB에서 동적 설정 로드
-  const cfg = await getGameSettings(db)
+  // 방 ID 오프셋으로 방 찾기
+  let roomCfg = ROOMS.standard
+  for (const [, r] of Object.entries(ROOMS)) {
+    if (round.id >= r.idOffset && round.id < r.idOffset + 10000000) { roomCfg = r; break }
+  }
+  const payoutRate = roomCfg.payout
 
   const userSeeds = bets.map((b: any) => b.user_id).join('')
   const hash      = await sha256(round.server_seed + round.block_height + userSeeds)
@@ -169,7 +194,7 @@ async function settleRound(db: D1Database, round: any) {
 
   for (const bet of bets) {
     const win    = bet.choice === result
-    const payout = win ? r2(bet.amount * cfg.PAYOUT) : 0
+    const payout = win ? r2(bet.amount * payoutRate) : 0
     totalPayout += payout
 
     // 베팅 결과 업데이트
@@ -235,13 +260,16 @@ async function settleRound(db: D1Database, round: any) {
 }
 
 // ─────────────────────────────────────────────
-// 미들웨어: 라운드 자동 처리
+// 미들웨어: 라운드 자동 처리 (모든 방)
 // ─────────────────────────────────────────────
 app.use('/api/*', async (c, next) => {
-  const { phase, idx } = getPhase()
-  const round = await ensureRound(c.env.DB, idx)
-  if (phase === 'result' && round && !round.settled) {
-    await settleRound(c.env.DB, round)
+  // 모든 방의 라운드를 자동으로 settle
+  for (const room of Object.keys(ROOMS)) {
+    const { phase, idx } = getPhase(room)
+    const round = await ensureRound(c.env.DB, idx, room)
+    if (phase === 'result' && round && !round.settled) {
+      await settleRound(c.env.DB, round)
+    }
   }
   await next()
 })
@@ -543,8 +571,10 @@ app.post('/api/withdraw/cancel', async (c) => {
 // API: 게임
 // ─────────────────────────────────────────────
 app.get('/api/round/current', async (c) => {
-  const { phase, timeLeft, idx } = getPhase()
-  const round = await ensureRound(c.env.DB, idx)
+  const room = c.req.query('room') || 'standard'
+  const r = ROOMS[room] || ROOMS.standard
+  const { phase, timeLeft, idx } = getPhase(room)
+  const round = await ensureRound(c.env.DB, idx, room)
   if (!round) return c.json({ error:'ROUND_ERROR' }, 500)
 
   const bets = await c.env.DB.prepare('SELECT username, choice, amount, created_at FROM bets WHERE round_id=? ORDER BY created_at DESC LIMIT 10').bind(round.id).all<any>()
@@ -555,6 +585,7 @@ app.get('/api/round/current', async (c) => {
     totalOdd: round.total_odd, totalEven: round.total_even, betCount: round.bet_count,
     result: round.result, hashValue: round.hash_value,
     serverSeed: phase === 'result' ? round.server_seed : null,
+    room, roomInfo: { name: r.name, emoji: r.emoji, minBet: r.minBet, maxBet: r.maxBet, payout: r.payout, feeRate: r.feeRate, roundDuration: r.roundDuration },
     recentBets: (bets.results||[]).map((b:any) => ({
       username: b.username.substring(0,2)+'**', choice: b.choice,
       amount: b.amount, timestamp: b.created_at
@@ -567,20 +598,21 @@ app.post('/api/bet', async (c) => {
   if (!user) return c.json({ error:'UNAUTH' }, 401)
   if (user.is_banned) return c.json({ error:'BANNED' }, 403)
 
-  const { phase, idx } = getPhase()
+  const { choice, amount, room: roomParam } = await c.req.json()
+  const room = ROOMS[roomParam] ? roomParam : 'standard'
+  const r = ROOMS[room]
+  const { phase, idx } = getPhase(room)
   if (phase !== 'betting') return c.json({ error:'NOT_BETTING' }, 400)
 
-  const round = await ensureRound(c.env.DB, idx)
+  const round = await ensureRound(c.env.DB, idx, room)
   if (!round) return c.json({ error:'ROUND_ERROR' }, 500)
 
-  const { choice, amount } = await c.req.json()
   if (choice !== 'odd' && choice !== 'even') return c.json({ error:'INVALID_CHOICE' }, 400)
 
-  const cfg = await getGameSettings(c.env.DB)
   const amt = parseFloat(amount)
-  if (!amt || amt < cfg.MIN_BET)  return c.json({ error:'MIN_BET', min: cfg.MIN_BET }, 400)
-  if (amt > cfg.MAX_BET)          return c.json({ error:'MAX_BET', max: cfg.MAX_BET }, 400)
-  if (amt > user.balance)         return c.json({ error:'INSUFFICIENT' }, 400)
+  if (!amt || amt < r.minBet)  return c.json({ error:'MIN_BET', min: r.minBet }, 400)
+  if (amt > r.maxBet)          return c.json({ error:'MAX_BET', max: r.maxBet }, 400)
+  if (amt > user.balance)      return c.json({ error:'INSUFFICIENT' }, 400)
 
   // 중복 베팅 확인
   const alreadyBet = await c.env.DB.prepare('SELECT id FROM bets WHERE round_id=? AND user_id=?').bind(round.id, user.id).first()
@@ -598,7 +630,7 @@ app.post('/api/bet', async (c) => {
   ])
 
   const updated = await getUser(c.env.DB, user.id)
-  return c.json({ success:true, balance: updated?.balance || 0, bet:{ choice, amount:amt, roundId:round.id, serverSeedHash:round.server_seed_hash } })
+  return c.json({ success:true, balance: updated?.balance || 0, bet:{ choice, amount:amt, roundId:round.id, serverSeedHash:round.server_seed_hash, room } })
 })
 
 // ─────────────────────────────────────────────
@@ -1851,6 +1883,9 @@ const HTML = `<!DOCTYPE html>
 *{font-family:'Noto Sans KR','Noto Sans SC','Noto Sans JP',sans-serif}
 body{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh}
 .glass{background:rgba(255,255,255,0.06);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.12)}
+.room-card{transition:all 0.2s ease;position:relative;overflow:hidden}
+.room-card:hover{transform:scale(1.015);box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+.room-card:active{transform:scale(0.99)}
 .btn-odd{background:linear-gradient(135deg,#e53e3e,#c53030)}
 .btn-odd:hover:not(:disabled){background:linear-gradient(135deg,#c53030,#9b2c2c);transform:scale(1.03)}
 .btn-even{background:linear-gradient(135deg,#3182ce,#2b6cb0)}
@@ -1972,6 +2007,148 @@ select option{background:#1a1a2e;color:#fff}
 
 <!-- ══ 게임 탭 ══ -->
 <div id="p-game" class="hidden">
+
+  <!-- 방 선택 화면 -->
+  <div id="roomSelectScreen">
+    <div class="text-center mb-6">
+      <h2 class="text-2xl font-black mb-1">🎮 <span data-i18n="room_select_title">방 선택</span></h2>
+      <p class="text-gray-400 text-sm" data-i18n="room_select_desc">참여할 게임 방을 선택하세요</p>
+    </div>
+    <div class="grid grid-cols-1 gap-3 max-w-2xl mx-auto" id="roomList">
+
+      <!-- 터보 방 -->
+      <div onclick="selectRoom('turbo')" class="room-card glass rounded-2xl p-4 cursor-pointer hover:scale-[1.02] transition-all border border-yellow-500/30 hover:border-yellow-400/60 hover:bg-yellow-500/5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="text-3xl">⚡</div>
+            <div>
+              <div class="font-black text-base text-yellow-300" data-i18n="room_turbo">터보</div>
+              <div class="text-xs text-gray-400 mt-0.5">
+                <span class="text-yellow-400 font-bold" data-i18n="room_turbo_desc">15초 · 수수료 7%</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-gray-500" data-i18n="room_bet_range">베팅 범위</div>
+            <div class="text-sm font-bold text-yellow-300">1 ~ 100 USDT</div>
+            <div class="text-xs text-green-400 mt-0.5">x1.86</div>
+          </div>
+        </div>
+        <div id="room-status-turbo" class="mt-2 text-xs text-gray-500 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 bg-yellow-400 rounded-full pulse inline-block"></span>
+          <span data-i18n="room_loading">로딩 중...</span>
+        </div>
+      </div>
+
+      <!-- 스탠다드 방 -->
+      <div onclick="selectRoom('standard')" class="room-card glass rounded-2xl p-4 cursor-pointer hover:scale-[1.02] transition-all border border-blue-500/30 hover:border-blue-400/60 hover:bg-blue-500/5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="text-3xl">🎯</div>
+            <div>
+              <div class="font-black text-base text-blue-300" data-i18n="room_standard">스탠다드</div>
+              <div class="text-xs text-gray-400 mt-0.5">
+                <span class="text-blue-400 font-bold" data-i18n="room_standard_desc">30초 · 수수료 5%</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-gray-500" data-i18n="room_bet_range">베팅 범위</div>
+            <div class="text-sm font-bold text-blue-300">101 ~ 500 USDT</div>
+            <div class="text-xs text-green-400 mt-0.5">x1.90</div>
+          </div>
+        </div>
+        <div id="room-status-standard" class="mt-2 text-xs text-gray-500 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 bg-blue-400 rounded-full pulse inline-block"></span>
+          <span data-i18n="room_loading">로딩 중...</span>
+        </div>
+      </div>
+
+      <!-- 하이롤러 방 -->
+      <div onclick="selectRoom('high')" class="room-card glass rounded-2xl p-4 cursor-pointer hover:scale-[1.02] transition-all border border-purple-500/30 hover:border-purple-400/60 hover:bg-purple-500/5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="text-3xl">💎</div>
+            <div>
+              <div class="font-black text-base text-purple-300" data-i18n="room_high">하이롤러</div>
+              <div class="text-xs text-gray-400 mt-0.5">
+                <span class="text-purple-400 font-bold" data-i18n="room_high_desc">30초 · 수수료 4%</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-gray-500" data-i18n="room_bet_range">베팅 범위</div>
+            <div class="text-sm font-bold text-purple-300">501 ~ 2,000 USDT</div>
+            <div class="text-xs text-green-400 mt-0.5">x1.92</div>
+          </div>
+        </div>
+        <div id="room-status-high" class="mt-2 text-xs text-gray-500 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 bg-purple-400 rounded-full pulse inline-block"></span>
+          <span data-i18n="room_loading">로딩 중...</span>
+        </div>
+      </div>
+
+      <!-- VIP 방 -->
+      <div onclick="selectRoom('vip')" class="room-card glass rounded-2xl p-4 cursor-pointer hover:scale-[1.02] transition-all border border-orange-500/30 hover:border-orange-400/60 hover:bg-orange-500/5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="text-3xl">👑</div>
+            <div>
+              <div class="font-black text-base text-orange-300" data-i18n="room_vip">VIP</div>
+              <div class="text-xs text-gray-400 mt-0.5">
+                <span class="text-orange-400 font-bold" data-i18n="room_vip_desc">30초 · 수수료 3%</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-gray-500" data-i18n="room_bet_range">베팅 범위</div>
+            <div class="text-sm font-bold text-orange-300">2,001 ~ 5,000 USDT</div>
+            <div class="text-xs text-green-400 mt-0.5">x1.94</div>
+          </div>
+        </div>
+        <div id="room-status-vip" class="mt-2 text-xs text-gray-500 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 bg-orange-400 rounded-full pulse inline-block"></span>
+          <span data-i18n="room_loading">로딩 중...</span>
+        </div>
+      </div>
+
+      <!-- 마스터 방 -->
+      <div onclick="selectRoom('master')" class="room-card glass rounded-2xl p-4 cursor-pointer hover:scale-[1.02] transition-all border border-red-500/30 hover:border-red-400/60 hover:bg-red-500/5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="text-3xl">🏆</div>
+            <div>
+              <div class="font-black text-base text-red-300" data-i18n="room_master">마스터</div>
+              <div class="text-xs text-gray-400 mt-0.5">
+                <span class="text-red-400 font-bold" data-i18n="room_master_desc">30초 · 수수료 2%</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-gray-500" data-i18n="room_bet_range">베팅 범위</div>
+            <div class="text-sm font-bold text-red-300">5,001 ~ 10,000 USDT</div>
+            <div class="text-xs text-green-400 mt-0.5">x1.96</div>
+          </div>
+        </div>
+        <div id="room-status-master" class="mt-2 text-xs text-gray-500 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 bg-red-400 rounded-full pulse inline-block"></span>
+          <span data-i18n="room_loading">로딩 중...</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 게임 플레이 화면 (방 선택 후 표시) -->
+  <div id="gamePlayScreen" class="hidden">
+    <!-- 방 정보 헤더 -->
+    <div class="flex items-center justify-between mb-3">
+      <button onclick="backToRoomSelect()" class="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition">
+        ← <span data-i18n="room_back">방 선택으로</span>
+      </button>
+      <div id="currentRoomBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold glass"></div>
+    </div>
+
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
     <div class="lg:col-span-2 space-y-4">
       <div class="glass rounded-2xl p-5">

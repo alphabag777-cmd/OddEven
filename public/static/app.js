@@ -130,6 +130,16 @@ const I18N = {
     lb_rank:'순위',lb_loading:'랭킹 로딩 중...',lb_bet_rank:'💰 베팅액 순위',lb_roi_rank:'📈 순이익 순위',
     lb_title:'랭킹 리더보드',lb_desc:'누적 베팅 TOP10 및 순이익 TOP10',
     lb_notice:'* 아이디는 부분 마스킹 표시됩니다 · 최소 베팅 10 USDT 이상 유저만 순이익 랭킹에 표시',
+    // 방 선택 번역
+    room_select_title:'게임 방 선택',room_select_desc:'참여할 게임 방을 선택하세요',
+    room_turbo:'⚡ 터보',room_turbo_desc:'15초 · 수수료 7%',
+    room_standard:'🎯 스탠다드',room_standard_desc:'30초 · 수수료 5%',
+    room_high:'💎 하이롤러',room_high_desc:'30초 · 수수료 4%',
+    room_vip:'👑 VIP',room_vip_desc:'30초 · 수수료 3%',
+    room_master:'🏆 마스터',room_master_desc:'30초 · 수수료 2%',
+    room_bet_range:'베팅 범위',room_loading:'로딩 중...',room_back:'방 선택으로',
+    room_players:'명 참여 중',room_phase_betting:'베팅 중',room_phase_result:'결과 확인',
+    room_fee:'수수료',room_payout_rate:'배당률',
   },
   en: {
     blockchain_fair:'Blockchain Fair',login:'Login',register:'Register',logout:'Logout',
@@ -259,6 +269,16 @@ const I18N = {
     lb_rank:'Rank',lb_loading:'Loading rankings...',lb_bet_rank:'💰 Top Bettors',lb_roi_rank:'📈 Top Profit',
     lb_title:'Leaderboard',lb_desc:'Top 10 Bettors & Top 10 Profit',
     lb_notice:'* Usernames are partially masked · Min 10 USDT wagered for profit ranking',
+    // Room selection
+    room_select_title:'Select Game Room',room_select_desc:'Choose the game room to join',
+    room_turbo:'⚡ Turbo',room_turbo_desc:'15s · 7% fee',
+    room_standard:'🎯 Standard',room_standard_desc:'30s · 5% fee',
+    room_high:'💎 High Roller',room_high_desc:'30s · 4% fee',
+    room_vip:'👑 VIP',room_vip_desc:'30s · 3% fee',
+    room_master:'🏆 Master',room_master_desc:'30s · 2% fee',
+    room_bet_range:'Bet Range',room_loading:'Loading...',room_back:'Back to Rooms',
+    room_players:'players',room_phase_betting:'Betting',room_phase_result:'Result',
+    room_fee:'Fee',room_payout_rate:'Payout',
   },
   zh: {
     blockchain_fair:'区块链公平',login:'登录',register:'注册',logout:'退出',
@@ -388,6 +408,16 @@ const I18N = {
     lb_rank:'排名',lb_loading:'加载排行榜...',lb_bet_rank:'💰 投注排行',lb_roi_rank:'📈 盈利排行',
     lb_title:'排行榜',lb_desc:'累计投注TOP10 及 净盈利TOP10',
     lb_notice:'* 用户名部分隐藏 · 最低投注10 USDT以上用户参与盈利排名',
+    // 房间选择
+    room_select_title:'选择游戏房间',room_select_desc:'请选择要参与的游戏房间',
+    room_turbo:'⚡ 极速',room_turbo_desc:'15秒 · 手续费7%',
+    room_standard:'🎯 标准',room_standard_desc:'30秒 · 手续费5%',
+    room_high:'💎 大额',room_high_desc:'30秒 · 手续费4%',
+    room_vip:'👑 VIP',room_vip_desc:'30秒 · 手续费3%',
+    room_master:'🏆 大师',room_master_desc:'30秒 · 手续费2%',
+    room_bet_range:'投注范围',room_loading:'加载中...',room_back:'返回房间选择',
+    room_players:'人参与',room_phase_betting:'投注中',room_phase_result:'查看结果',
+    room_fee:'手续费',room_payout_rate:'赔率',
   },
   ja: {
     blockchain_fair:'ブロックチェーン公正',login:'ログイン',register:'登録',logout:'ログアウト',
@@ -517,6 +547,16 @@ const I18N = {
     lb_rank:'順位',lb_loading:'ランキング読込中...',lb_bet_rank:'💰 ベット額順位',lb_roi_rank:'📈 純損益順位',
     lb_title:'ランキング リーダーボード',lb_desc:'累計ベットTOP10 & 純損益TOP10',
     lb_notice:'* ユーザー名は部分マスク表示 · 最低10 USDT以上ベットしたユーザーのみ純損益ランキングに表示',
+    // 部屋選択
+    room_select_title:'ゲームルーム選択',room_select_desc:'参加するゲームルームを選択してください',
+    room_turbo:'⚡ ターボ',room_turbo_desc:'15秒 · 手数料7%',
+    room_standard:'🎯 スタンダード',room_standard_desc:'30秒 · 手数料5%',
+    room_high:'💎 ハイローラー',room_high_desc:'30秒 · 手数料4%',
+    room_vip:'👑 VIP',room_vip_desc:'30秒 · 手数料3%',
+    room_master:'🏆 マスター',room_master_desc:'30秒 · 手数料2%',
+    room_bet_range:'ベット範囲',room_loading:'読み込み中...',room_back:'ルーム選択に戻る',
+    room_players:'人が参加中',room_phase_betting:'ベット中',room_phase_result:'結果確認',
+    room_fee:'手数料',room_payout_rate:'配当率',
   }
 }
 
@@ -548,6 +588,8 @@ let me = null
 let lastRoundId = -1
 let myBet = null
 let currentPayout = 1.90  // 게임 배당률 (동적 업데이트)
+let currentRoom = localStorage.getItem('currentRoom') || 'standard'  // 현재 선택된 방
+let roomStatusInterval = null  // 방 상태 폴링 인터벌
 
 const $ = id => document.getElementById(id)
 const fmtU = n => (Math.round(n * 100) / 100).toFixed(2)
@@ -608,6 +650,7 @@ function showTab(name) {
   if (name === 'faq')         loadFAQ('')
   if (name === 'support')     loadSupport()
   if (name === 'leaderboard') loadLeaderboard('total_bet')
+  if (name === 'game')        showRoomSelect()
 }
 
 function updateUI() {
@@ -687,10 +730,122 @@ async function logout() {
 }
 
 // ═══════════════════════════════════════════════
+// 방 선택 기능
+// ═══════════════════════════════════════════════
+const ROOM_CONFIGS = {
+  turbo:    { name:'Turbo',    emoji:'⚡', color:'yellow', minBet:1,    maxBet:100,   feeRate:0.07, payout:1.86, roundDuration:15 },
+  standard: { name:'Standard', emoji:'🎯', color:'blue',   minBet:101,  maxBet:500,   feeRate:0.05, payout:1.90, roundDuration:30 },
+  high:     { name:'High',     emoji:'💎', color:'purple', minBet:501,  maxBet:2000,  feeRate:0.04, payout:1.92, roundDuration:30 },
+  vip:      { name:'VIP',      emoji:'👑', color:'orange', minBet:2001, maxBet:5000,  feeRate:0.03, payout:1.94, roundDuration:30 },
+  master:   { name:'Master',   emoji:'🏆', color:'red',    minBet:5001, maxBet:10000, feeRate:0.02, payout:1.96, roundDuration:30 },
+}
+
+function showRoomSelect() {
+  const ss = $('roomSelectScreen')
+  const gs = $('gamePlayScreen')
+  if (ss) ss.classList.remove('hidden')
+  if (gs) gs.classList.add('hidden')
+  // 방 상태 로드 시작
+  loadAllRoomStatus()
+  if (roomStatusInterval) clearInterval(roomStatusInterval)
+  roomStatusInterval = setInterval(loadAllRoomStatus, 5000)
+}
+
+async function loadAllRoomStatus() {
+  for (const roomKey of Object.keys(ROOM_CONFIGS)) {
+    loadRoomStatus(roomKey)
+  }
+}
+
+async function loadRoomStatus(roomKey) {
+  const el = $('room-status-' + roomKey)
+  if (!el) return
+  try {
+    const data = await api('/api/round/current?room=' + roomKey)
+    if (!data || !data.id) return
+    const r = ROOM_CONFIGS[roomKey]
+    const phase = data.phase === 'betting' ? t('room_phase_betting') : t('room_phase_result')
+    const timeLeft = data.timeLeft || 0
+    const betCount = data.betCount || 0
+    const color = r.color
+    const dotColor = data.phase === 'betting' ? `bg-${color}-400` : 'bg-gray-400'
+    el.innerHTML = `
+      <span class="w-1.5 h-1.5 ${dotColor} rounded-full ${data.phase==='betting'?'pulse':''} inline-block"></span>
+      <span class="font-medium">${phase}</span>
+      <span class="text-gray-400">·</span>
+      <span>${timeLeft}${t('sec_unit')}</span>
+      <span class="text-gray-400">·</span>
+      <span>${betCount} ${t('room_players')}</span>
+    `
+  } catch(e) {
+    // ignore
+  }
+}
+
+function selectRoom(roomKey) {
+  if (!ROOM_CONFIGS[roomKey]) return
+  currentRoom = roomKey
+  localStorage.setItem('currentRoom', roomKey)
+  if (roomStatusInterval) { clearInterval(roomStatusInterval); roomStatusInterval = null }
+  const ss = $('roomSelectScreen')
+  const gs = $('gamePlayScreen')
+  if (ss) ss.classList.add('hidden')
+  if (gs) gs.classList.remove('hidden')
+  // 방 배지 업데이트
+  updateRoomBadge()
+  // 베팅 범위 업데이트
+  updateBetLimitsForRoom()
+  // 라운드 로드
+  loadRound()
+}
+
+function backToRoomSelect() {
+  currentRoom = 'standard'
+  localStorage.removeItem('currentRoom')
+  showRoomSelect()
+}
+
+function updateRoomBadge() {
+  const badge = $('currentRoomBadge')
+  if (!badge) return
+  const r = ROOM_CONFIGS[currentRoom]
+  if (!r) return
+  const colorMap = {
+    yellow: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40',
+    blue:   'bg-blue-500/20 text-blue-300 border border-blue-500/40',
+    purple: 'bg-purple-500/20 text-purple-300 border border-purple-500/40',
+    orange: 'bg-orange-500/20 text-orange-300 border border-orange-500/40',
+    red:    'bg-red-500/20 text-red-300 border border-red-500/40',
+  }
+  const cls = colorMap[r.color] || colorMap.blue
+  badge.className = `flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold glass ${cls}`
+  badge.innerHTML = `${r.emoji} ${t('room_' + currentRoom) || r.name} &nbsp;·&nbsp; ${r.minBet}~${r.maxBet.toLocaleString()} USDT &nbsp;·&nbsp; x${r.payout}`
+}
+
+function updateBetLimitsForRoom() {
+  const r = ROOM_CONFIGS[currentRoom]
+  if (!r) return
+  const betAmt = $('betAmt')
+  if (betAmt) {
+    betAmt.min = r.minBet
+    betAmt.max = r.maxBet
+    betAmt.placeholder = `${r.minBet} ~ ${r.maxBet.toLocaleString()} USDT`
+  }
+  const label = document.querySelector('[data-i18n="bet_amount_label"]')
+  if (label) {
+    label.textContent = `${t('bet_amount_label').split('(')[0].trim()} (USDT, ${t('room_bet_range')}: ${r.minBet}~${r.maxBet.toLocaleString()})`
+  }
+  // 배당률 표시 업데이트
+  currentPayout = r.payout
+  const pd = $('gPayoutDisplay')
+  if (pd) pd.textContent = r.payout + 'x'
+}
+
+// ═══════════════════════════════════════════════
 // 게임
 // ═══════════════════════════════════════════════
 async function loadRound() {
-  const data = await api('/api/round/current')
+  const data = await api('/api/round/current?room=' + currentRoom)
   if (!data.id) return
 
   const isBetting = data.phase === 'betting'
@@ -704,8 +859,9 @@ async function loadRound() {
   if ($('gRoundId')) $('gRoundId').textContent = '#' + data.id
   if ($('gBlock'))   $('gBlock').textContent   = 'Block #' + data.blockHeight
   if ($('gTimer'))   $('gTimer').textContent   = data.timeLeft
+  const r = ROOM_CONFIGS[currentRoom] || ROOM_CONFIGS.standard
   const bar = $('gBar')
-  if (bar) bar.style.width = (isBetting ? (data.timeLeft/30*100) : (data.timeLeft/8*100)) + '%'
+  if (bar) bar.style.width = (isBetting ? (data.timeLeft/r.roundDuration*100) : (data.timeLeft/8*100)) + '%'
 
   if ($('gSeedHash')) $('gSeedHash').textContent = data.serverSeedHash
 
@@ -805,7 +961,7 @@ async function doBet(choice) {
   if (!me) { showTab('login'); return }
   const amount = parseFloat($('betAmt').value)
   if (!amount || amount <= 0) { toast(t('err_min_bet'), 'text-red-400'); return }
-  const data = await api('/api/bet', { method:'POST', body: JSON.stringify({choice, amount}) })
+  const data = await api('/api/bet', { method:'POST', body: JSON.stringify({choice, amount, room: currentRoom}) })
   if (data.error) { toast(errMap(data.error), 'text-red-400'); return }
   myBet = { choice, amount }
   me.balance = data.balance
@@ -2957,17 +3113,23 @@ async function init() {
   api('/api/game-settings').then(gs => {
     if (gs && gs.payout) {
       currentPayout = parseFloat(gs.payout) || 1.90
+      const r = ROOM_CONFIGS[currentRoom]
+      if (r) currentPayout = r.payout
       if ($('gPayoutDisplay')) $('gPayoutDisplay').textContent = currentPayout.toFixed(2) + 'x'
     }
   })
 
-  loadRound()
+  // 방 선택 화면 표시 (showTab('game')에서 이미 처리)
   loadFeed()
   loadDashboard()
   loadNotices()  // 공지 배너 로드
   checkNoticePopup()  // 공지 팝업
 
-  setInterval(loadRound, 1000)
+  setInterval(() => {
+    // 게임 플레이 화면이 보일 때만 라운드 로드
+    const gs = $('gamePlayScreen')
+    if (gs && !gs.classList.contains('hidden')) loadRound()
+  }, 1000)
   setInterval(loadFeed,  4000)
   setInterval(loadDashboard, 30000)
   setInterval(loadNotices, 60000)  // 1분마다 공지 갱신
