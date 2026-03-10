@@ -749,7 +749,7 @@ function initLayout() {
     }
   }
   setNavTop()
-  window.addEventListener('resize', setNavTop)
+  window.addEventListener('resize', () => { setNavTop(); updateUI() })
 }
 
 function updateUI() {
@@ -771,10 +771,49 @@ function updateUI() {
 
   // 로그인 후 표시 탭 버튼
   const userOnlyTabs = ['mypage','wallet','support','referral','verify']
+  const isMobileView = window.innerWidth < 640
   userOnlyTabs.forEach(tabName => {
-    ['t-'+tabName, 't-'+tabName+'-m'].forEach(id => {
-      const b = $(id); if (b) b.classList.toggle('hidden', !loggedIn)
-    })
+    const b1 = $('t-'+tabName)
+    const b2 = $('t-'+tabName+'-m')
+    if (b1) {
+      // PC: 모든 탭 1단에 표시, 모바일: 1단에는 주요 탭만
+      if (isMobileView) {
+        // 모바일 1단: mypage, wallet, dashboard만 표시
+        if (['mypage','wallet'].includes(tabName)) {
+          b1.classList.toggle('hidden', !loggedIn)
+        } else {
+          // referral, verify, support는 모바일 1단에서 숨김 (2단에서 표시)
+          b1.classList.add('hidden')
+        }
+      } else {
+        // PC: 모든 탭 1단에 표시
+        b1.classList.toggle('hidden', !loggedIn)
+      }
+    }
+    if (b2) b2.classList.toggle('hidden', !loggedIn)
+  })
+
+  // 모바일 2단 메뉴 표시/숨김
+  const subNav = $('mobileSubNav')
+  if (subNav) {
+    if (isMobileView) {
+      subNav.style.display = 'flex'
+    } else {
+      subNav.style.display = 'none'
+    }
+  }
+
+  // PC에서는 랭킹/FAQ를 1단에서 표시, 모바일에서는 2단에서만 표시
+  const alwaysTabs = ['leaderboard','faq']
+  alwaysTabs.forEach(tabName => {
+    const b1 = $('t-'+tabName)
+    if (b1) {
+      if (isMobileView) {
+        b1.classList.add('hidden')
+      } else {
+        b1.classList.remove('hidden')
+      }
+    }
   })
 
   // 관리자 탭

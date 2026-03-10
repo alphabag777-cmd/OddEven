@@ -2689,31 +2689,29 @@ button,input,select,textarea{font-family:inherit}
   </div>
 </header>
 
-<!-- 탭 네비게이션 - 모바일 2단 / PC 1단 -->
+<!-- 탭 네비게이션 - 모바일 2단 항상표시 / PC 1단 -->
 <nav id="mainNav" class="border-b border-white/10 bg-black/30 sticky z-40" style="top:var(--hdr-h,48px)">
-  <!-- 1단: 주요 탭 (모바일: 게임/마이페이지/지갑/투명성/더보기, PC: 전체 1줄) -->
-  <div class="max-w-6xl mx-auto px-2 flex whitespace-nowrap overflow-x-auto">
-    <button onclick="showTab('game')"        id="t-game"        class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_game">🎲 게임</button>
-    <button onclick="showTab('mypage')"      id="t-mypage"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_mypage">👤 마이페이지</button>
-    <button onclick="showTab('wallet')"      id="t-wallet"      class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_wallet">💰 지갑</button>
-    <button onclick="showTab('dashboard')"   id="t-dashboard"   class="tab-off px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_dashboard">📊 투명성</button>
-    <!-- PC 전용: 2단 메뉴 항목을 1단에 표시 -->
-    <button onclick="showTab('referral')"    id="t-referral"    class="tab-off hidden sm:hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천수당</button>
-    <button onclick="showTab('verify')"      id="t-verify"      class="tab-off hidden sm:hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
-    <button onclick="showTab('leaderboard')" id="t-leaderboard" class="tab-off hidden sm:inline-block px-3 py-2.5 text-xs font-bold transition shrink-0">🏆 랭킹</button>
-    <button onclick="showTab('faq')"         id="t-faq"         class="tab-off hidden sm:inline-block px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
-    <button onclick="showTab('support')"     id="t-support"     class="tab-off hidden sm:hidden px-3 py-2.5 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
-    <button onclick="showTab('admin')"       id="t-admin"       class="tab-off hidden px-3 py-2.5 text-xs font-bold transition shrink-0 text-yellow-400">⚙️ 관리자</button>
-    <!-- 모바일 전용: 더보기 토글 -->
-    <button onclick="toggleMobileSubNav()" id="t-more" class="sm:hidden tab-off px-3 py-2.5 text-xs font-bold transition shrink-0">더보기 ▼</button>
+  <!-- PC: 전체 1단 / 모바일: 1단 (주요 메뉴) -->
+  <div class="max-w-6xl mx-auto px-2 flex whitespace-nowrap overflow-x-auto" style="-webkit-overflow-scrolling:touch;scrollbar-width:none">
+    <button onclick="showTab('game')"        id="t-game"        class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_game">🎲 게임</button>
+    <button onclick="showTab('mypage')"      id="t-mypage"      class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_mypage">👤 마이페이지</button>
+    <button onclick="showTab('wallet')"      id="t-wallet"      class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_wallet">💰 지갑</button>
+    <button onclick="showTab('dashboard')"   id="t-dashboard"   class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_dashboard">📊 투명성</button>
+    <!-- PC 전용: 2단 항목도 1단에 함께 표시 (sm 이상에서만 보임) -->
+    <button onclick="showTab('referral')"    id="t-referral"    class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천수당</button>
+    <button onclick="showTab('verify')"      id="t-verify"      class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
+    <button onclick="showTab('leaderboard')" id="t-leaderboard" class="tab-off px-3 py-2 text-xs font-bold transition shrink-0">🏆 랭킹</button>
+    <button onclick="showTab('faq')"         id="t-faq"         class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
+    <button onclick="showTab('support')"     id="t-support"     class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
+    <button onclick="showTab('admin')"       id="t-admin"       class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0 text-yellow-400">⚙️ 관리자</button>
   </div>
-  <!-- 2단: 모바일 전용 (sm 미만) - 더보기 클릭 시 토글 -->
-  <div id="mobileSubNav" class="sm:hidden border-t border-white/5 bg-black/20 px-2 flex whitespace-nowrap overflow-x-auto" style="display:none">
-    <button onclick="showTab('referral')"    id="t-referral-m"  class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천수당</button>
-    <button onclick="showTab('verify')"      id="t-verify-m"    class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
-    <button onclick="showTab('leaderboard')" id="t-leaderboard-m" class="tab-off px-3 py-2 text-xs font-bold transition shrink-0">🏆 랭킹</button>
-    <button onclick="showTab('faq')"         id="t-faq-m"       class="tab-off px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
-    <button onclick="showTab('support')"     id="t-support-m"   class="tab-off hidden px-3 py-2 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
+  <!-- 모바일 2단: 항상 표시 (sm 미만에서만 보임) -->
+  <div id="mobileSubNav" class="border-t border-white/5 bg-black/20 px-2 flex whitespace-nowrap overflow-x-auto" style="-webkit-overflow-scrolling:touch;scrollbar-width:none;display:none">
+    <button onclick="showTab('referral')"    id="t-referral-m"  class="tab-off hidden px-3 py-1.5 text-xs font-bold transition shrink-0" data-i18n="tab_referral">👥 추천수당</button>
+    <button onclick="showTab('verify')"      id="t-verify-m"    class="tab-off hidden px-3 py-1.5 text-xs font-bold transition shrink-0" data-i18n="tab_verify">🔍 검증</button>
+    <button onclick="showTab('leaderboard')" id="t-leaderboard-m" class="tab-off px-3 py-1.5 text-xs font-bold transition shrink-0">🏆 랭킹</button>
+    <button onclick="showTab('faq')"         id="t-faq-m"       class="tab-off px-3 py-1.5 text-xs font-bold transition shrink-0" data-i18n="tab_faq">❓ FAQ</button>
+    <button onclick="showTab('support')"     id="t-support-m"   class="tab-off hidden px-3 py-1.5 text-xs font-bold transition shrink-0" data-i18n="tab_support">💬 문의</button>
   </div>
 </nav>
 
